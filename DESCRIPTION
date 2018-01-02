@@ -1,0 +1,13 @@
+Package: bsnsing
+Type: Package
+Title: bsnsing: A package for decision tree learning with Boolean sensing
+Version: 0.1.0
+Author: Yanchao Liu
+Maintainer: Yanchao Liu <yanchaoliu@wayne.edu>
+Description: The bsnsing package provides functions for building a decision tree classifier and making predictions. It solves the two-class and multi-class classification problems under the supervised learning paradigm. While building a decision tree, bsnsing uses a Boolean rule involving multiple variables to split a node. Each split rule is identified by solving an optimization model that minimizes misclassification as well as complexity. Compared to other decision tree learners that seek single-variable splits in a greedy fashion, bsnsing's approach is more holistic and produces highly interpretable and accurate trees.
+License: GPL-3.0
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.0.1
+Imports: lpSolve
+Suggests: cplexAPI
