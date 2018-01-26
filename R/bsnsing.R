@@ -994,6 +994,14 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
   temp[[1L]] <- quote(stats::model.frame) # change the function called
   mf <- eval.parent(temp)
   Terms <- attr(mf, "terms")
+
+  # remove factor variables with only 1 unique value
+  mfv <- mf[, attr(Terms, "term.labels")]
+  factorcol <- sapply(mfv, function(x) is.factor(x))
+  factormfv <- mfv[, factorcol, drop = F]
+  collevels <- sapply(factormfv, function(x) length(levels(x)))
+  removecol <- names(collevels[collevels == 1])
+  if(length(removecol) > 0) stop(paste("Factor variable", removecol, "has only one unique level. Remove this variable and try again."))
   x <- model.matrix(Terms, data = mf)
   y <- model.response(mf)
 
