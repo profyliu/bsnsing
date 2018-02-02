@@ -528,7 +528,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   # Make sure x has appropriate column names
   x.col.names <- colnames(x)
   for (i in 1:length(x.col.names)) {
-    if(grepl('[<=>:/[:space:]]', x.col.names[i])) stop(paste("The column", i, "of x does not have an acceptable name."))
+    if(grepl('[<=>^*-+:/[:space:]]', x.col.names[i])) stop(paste("The column", i, "of x, i.e.,", trimws(x.col.names[i]), ", does not have an acceptable name."))
   }
 
   # Impute NA in x
