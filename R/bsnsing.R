@@ -487,6 +487,11 @@ bslearn <- function(bx, y, control = bscontrol()) {
 #' @export
 bsnsing <- function(x, ...) UseMethod("bsnsing")
 
+#' A class that contains multi-class classification model built by bsnsing
+#'
+#' @export
+mbsnsing <- setClass('mbsnsing')
+
 
 #' Learn a Classification Tree with Boolean Sensing
 #'
