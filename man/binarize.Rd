@@ -4,8 +4,12 @@
 \alias{binarize}
 \title{Create Binary Variables by the Classification Target}
 \usage{
-binarize(x, y, target = stop("'target' (0 or 1) must be provided"),
-  control = bscontrol())
+binarize(
+  x,
+  y,
+  target = stop("'target' (0 or 1) must be provided"),
+  control = bscontrol()
+)
 }
 \arguments{
 \item{x}{a data frame or matrix to be binarized.}

@@ -4,8 +4,14 @@
 \alias{binarize.numeric}
 \title{Create Binary Features based on a Numeric Vector}
 \usage{
-binarize.numeric(x, name, y, target = stop("Must provide a target, 0 or 1"),
-  segments = 10, bin.size = 5)
+binarize.numeric(
+  x,
+  name,
+  y,
+  target = stop("Must provide a target, 0 or 1"),
+  segments = 10,
+  bin.size = 5
+)
 }
 \arguments{
 \item{x}{a numeric vector.}

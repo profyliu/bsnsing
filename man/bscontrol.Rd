@@ -4,10 +4,21 @@
 \alias{bscontrol}
 \title{Define Parameters for the \code{\link{bsnsing}} Fit}
 \usage{
-bscontrol(lambda = 1L, bin.size = 5, max.rules = Inf, nseg.numeric = 10,
-  nseg.factor = 20, num2factor = 5, LP.epsilon = 1e-08, node.size = 20,
-  stop.prob = 0.9, opt.solver = c("cplex", "lpSolve"),
-  opt.model = c("mip", "hybrid", "lp"), bigM = 1, verbose = F)
+bscontrol(
+  lambda = 1L,
+  bin.size = 5,
+  max.rules = Inf,
+  nseg.numeric = 10,
+  nseg.factor = 20,
+  num2factor = 5,
+  LP.epsilon = 1e-08,
+  node.size = 20,
+  stop.prob = 0.9,
+  opt.solver = c("cplex", "lpSolve", "gurobi"),
+  opt.model = c("mip", "hybrid", "lp"),
+  bigM = 1,
+  verbose = F
+)
 }
 \arguments{
 \item{lambda}{the penalty multiplier of the L1 norm of the solution vector.}
@@ -28,7 +39,7 @@ bscontrol(lambda = 1L, bin.size = 5, max.rules = Inf, nseg.numeric = 10,
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
-\item{opt.solver}{a character string in the set {'cplex', 'lpSolve'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}} and the choice of 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.}
+\item{opt.solver}{a character string in the set {'cplex', 'gurobi', 'lpSolve'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.}
 
 \item{opt.model}{a character string in the set {'mip', 'hybrid', 'lp'} indicating the optimization model to solve in the program. The default is 'mip'. The choice of 'lp' is faster but may sacrifice the classification accuracy.}
 

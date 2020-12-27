@@ -4,8 +4,7 @@
 \alias{predict.mbsnsing}
 \title{Make Predictions with a Fitted \code{\link{bsnsing}} Model}
 \usage{
-\method{predict}{mbsnsing}(object, newdata = NULL, type = c("prob",
-  "class"))
+\method{predict}{mbsnsing}(object, newdata = NULL, type = c("prob", "class"))
 }
 \arguments{
 \item{object}{an object of class \code{\link{mbsnsing}}.}

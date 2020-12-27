@@ -27,6 +27,6 @@ y <- ifelse(Auto$origin == 1, 1, 0)
 bx <- binarize(x, y, target = 1)
 # learn the optimal Boolean rule
 bssol <- bslearn(bx, y)
-cat(paste("Optimal rule:" , bssol$rules, "\\n"))
+cat(paste("Optimal rule:" , bssol$rules, "\n"))
 bssol$confusion.matrix
 }

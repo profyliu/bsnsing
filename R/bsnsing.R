@@ -363,7 +363,6 @@ bslearn <- function(bx, y, control = bscontrol()) {
                        const.mat3)
     const.rhs <- c(y, rep(1, p), max.rules)
     const.dir <- c(ifelse(y == 1, ">=", "<="), rep("<=", p), "<=")
-
     objective.in <- c(rep(lambda, p), rep(1, n))
 
     if (verbose) cat(paste("Running lpSolve ... nrow:", nrow(const.mat), "ncol:", ncol(const.mat), "integer:", length(int.vec), "..."))
@@ -379,7 +378,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     LPsol$slack <- (sol$solution)[(p+1):(p+n)]
     LPsol$objval <- sol$objval
     LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
-  } else {
+  } else if(tolower(control$opt.solver) == 'cplex') {
     # Use cplex
     cplex.env <- cplexAPI::openEnvCPLEX()
     cplex.prob <- cplexAPI::initProbCPLEX(cplex.env)
@@ -441,6 +440,40 @@ bslearn <- function(bx, y, control = bscontrol()) {
     LPsol$w <- setNames((cplex.solution$x)[1:p], colnames(bx))
     LPsol$slack <- (cplex.solution$x)[(p+1):(p+n)]
     LPsol$objval <- cplex.solution$objval
+    LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
+  } else if(tolower(control$opt.solver) == 'gurobi'){
+    # Gurobi
+    n1 <- length(y[y == 1])
+    n0 <- length(y[y == 0])
+    index1 <- (1:n)[y == 1]
+    index0 <- (1:n)[y == 0]
+    const.mat1 <- cbind(bx, setNames(as.data.frame(diag(ifelse(y == 1, 1L, -bigM))), paste0('s', 1:n)))
+    var.names <- colnames(const.mat1)
+    const.mat2 <- setNames(as.data.frame(cbind(diag(rep(1L,p)), matrix(0L, nrow = p, ncol = n))), var.names)
+    const.mat3 <- setNames(as.data.frame(cbind(matrix(1L, nrow = 1, ncol = p), matrix(0L, nrow = 1, ncol = n))), var.names)
+    grbmod <- list()
+    const.mat <- rbind(const.mat1,
+                       const.mat2,
+                       const.mat3)
+    grbmod$A <- as.matrix(const.mat, nrow = nrow(const.mat), ncol = ncol(const.mat), byrow = T)
+    grbmod$rhs <- c(y, rep(1, p), max.rules)
+    grbmod$sense <- c(ifelse(y == 1, ">", "<"), rep("<", p), "<")
+    grbmod$grbmodsense <- 'min'
+    grbmod$obj <- c(rep(lambda, p), rep(1, n))
+    grbmod$vtype <- rep("C", p + n)
+    grbmod$vtype[int.vec] <- "B"
+    grbparams <- list(OutputFlag=0)
+    if (verbose) cat(paste("Running GUROBI ... nrow:", nrow(const.mat), "ncol:", ncol(const.mat), "integer:", length(int.vec), "..."))
+    grbtime <- system.time(
+      grbsol <- gurobi(grbmod, grbparams)
+    )
+    if (verbose) cat(paste("Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... "))
+
+    LPsol <- list()
+    LPsol$status <- grbsol$status
+    LPsol$w <- setNames((grbsol$x)[1:p], var.names[1:p])
+    LPsol$slack <- (grbsol$x)[(p+1):(p+n)]
+    LPsol$objval <- grbsol$objval
     LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
   }
 
@@ -1053,7 +1086,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param LP.epsilon any element in the LP solution \code{w} smaller than \code{LP.epsilon} will be taken as zero.
 #' @param node.size if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'cplex', 'lpSolve'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}} and the choice of 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.
+#' @param opt.solver a character string in the set {'cplex', 'gurobi', 'lpSolve'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.
 #' @param opt.model a character string in the set {'mip', 'hybrid', 'lp'} indicating the optimization model to solve in the program. The default is 'mip'. The choice of 'lp' is faster but may sacrifice the classification accuracy.
 #' @param bigM a positive integer representing the big M value used in the MIP formulation. The default is 1.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
@@ -1069,7 +1102,7 @@ bscontrol <- function(lambda = 1L, bin.size = 5, max.rules = Inf,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             LP.epsilon = 1e-8,
                             node.size = 20, stop.prob = 0.9,
-                            opt.solver = c('cplex', 'lpSolve'),
+                            opt.solver = c('cplex', 'lpSolve','gurobi'),
                             opt.model = c('mip', 'hybrid', 'lp'), bigM = 1,
                             verbose = F) {
   if (lambda < 0L) {
