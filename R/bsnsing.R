@@ -174,7 +174,7 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
   yy <- oy[ox >= lo & ox <= up]
   xx <- ox[ox >= lo & ox <= up]
   nn <- length(xx)
-  if (nn < 2) stop("Something is wrong")
+  if (nn < 2) stop("This should not happen.")
   cutpoints.gt <- c()
   for (i in 2:nn) {
     if (yy[i-1] != target & yy[i] == target & xx[i-1] != xx[i]) {
@@ -378,7 +378,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     LPsol$slack <- (sol$solution)[(p+1):(p+n)]
     LPsol$objval <- sol$objval
     LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
-  } else if(tolower(control$opt.solver) == 'cplex') {
+  } else if(control$opt.solver == 'cplex') {
     # Use cplex
     cplex.env <- cplexAPI::openEnvCPLEX()
     cplex.prob <- cplexAPI::initProbCPLEX(cplex.env)
@@ -441,7 +441,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     LPsol$slack <- (cplex.solution$x)[(p+1):(p+n)]
     LPsol$objval <- cplex.solution$objval
     LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
-  } else if(tolower(control$opt.solver) == 'gurobi'){
+  } else if(control$opt.solver == 'gurobi'){
     # Gurobi
     n1 <- length(y[y == 1])
     n0 <- length(y[y == 0])
@@ -475,13 +475,59 @@ bslearn <- function(bx, y, control = bscontrol()) {
     LPsol$slack <- (grbsol$x)[(p+1):(p+n)]
     LPsol$objval <- grbsol$objval
     LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
+  } else if(control$opt.solver == 'greedy'){
+    selected_cols <- c()
+    subset.rows <- 1:length(y)
+    subset.cols <- 1:ncol(bx)
+    TP <- rep(0, length(subset.cols))
+    FP <- rep(0, length(subset.cols))
+    while (TRUE){
+      TP[subset.cols] <- 0
+      FP[subset.cols] <- 0
+      for(j in subset.cols){
+        for(i in subset.rows){
+          if (bx[i,j] == 1){
+            if (y[i] == 1){
+              TP[j] <- TP[j] + 1
+            } else {
+              FP[j] <- FP[j] + 1
+            }
+          }
+        }
+      }
+      best_net <- -1
+      best_j <- 0
+      for(j in subset.cols){
+        this_net <- TP[j] - FP[j]
+        if (this_net > best_net){
+          best_j <- j
+          best_net <- this_net
+        }
+      }
+      if (best_net < max(lambda, 0)){
+        break
+      } else {
+        selected_cols <- c(selected_cols, best_j)
+        subset.cols <- setdiff(subset.cols, best_j)
+        subset.rows <- which(bx[,best_j] == 0)
+      }
+    }
+    n.rules <- length(selected_cols)
+    rules <- paste(names(bx)[selected_cols], collapse = ' | ')
+    rowsum_selected_cols <- rowSums(cbind(rep(0, length(y)), bx[,selected_cols]))
+    fitted.values <- integer(length(y))
+    fitted.values[rowsum_selected_cols > 0] <- 1
+    confusion.matrix <- table(fitted.values, y)
+    LPsol <- list()
   }
 
-  if (verbose) cat(paste("fractional: ", LPsol$fractional, "\n"))
-  fitted.values <- ifelse(LPsol$slack <= epsilon, y, (1 - y))
-  confusion.matrix <- table(fitted.values, y)
-  n.rules <- sum(LPsol$w > epsilon)
-  rules <- paste(names(LPsol$w)[LPsol$w > epsilon], collapse = ' | ')
+  if(control$opt.solver %in% c('lpSolve','cplex','gurobi')){
+    if (verbose) cat(paste("fractional: ", LPsol$fractional, "\n"))
+    fitted.values <- ifelse(LPsol$slack <= epsilon, y, (1 - y))
+    confusion.matrix <- table(fitted.values, y)
+    n.rules <- sum(LPsol$w > epsilon)
+    rules <- paste(names(LPsol$w)[LPsol$w > epsilon], collapse = ' | ')
+  }
 
   bsol <- list(LPsol = LPsol, fitted.values = fitted.values, confusion.matrix = confusion.matrix,
                n.rules = n.rules, rules = rules)
@@ -1086,7 +1132,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param LP.epsilon any element in the LP solution \code{w} smaller than \code{LP.epsilon} will be taken as zero.
 #' @param node.size if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'cplex', 'gurobi', 'lpSolve'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.
+#' @param opt.solver a character string in the set {'cplex', 'gurobi', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.
 #' @param opt.model a character string in the set {'mip', 'hybrid', 'lp'} indicating the optimization model to solve in the program. The default is 'mip'. The choice of 'lp' is faster but may sacrifice the classification accuracy.
 #' @param bigM a positive integer representing the big M value used in the MIP formulation. The default is 1.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
@@ -1102,7 +1148,7 @@ bscontrol <- function(lambda = 1L, bin.size = 5, max.rules = Inf,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             LP.epsilon = 1e-8,
                             node.size = 20, stop.prob = 0.9,
-                            opt.solver = c('cplex', 'lpSolve','gurobi'),
+                            opt.solver = c('cplex', 'lpSolve','gurobi','greedy'),
                             opt.model = c('mip', 'hybrid', 'lp'), bigM = 1,
                             verbose = F) {
   if (lambda < 0L) {
