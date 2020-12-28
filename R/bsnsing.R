@@ -477,8 +477,8 @@ bslearn <- function(bx, y, control = bscontrol()) {
     LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
   } else if(control$opt.solver == 'greedy'){
     selected_cols <- c()
-    subset.rows <- 1:length(y)
-    subset.cols <- 1:ncol(bx)
+    subset.rows <- 1:n
+    subset.cols <- 1:p
     TP <- rep(0, length(subset.cols))
     FP <- rep(0, length(subset.cols))
     while (TRUE){
@@ -514,11 +514,18 @@ bslearn <- function(bx, y, control = bscontrol()) {
     }
     n.rules <- length(selected_cols)
     rules <- paste(names(bx)[selected_cols], collapse = ' | ')
-    rowsum_selected_cols <- rowSums(cbind(rep(0, length(y)), bx[,selected_cols]))
-    fitted.values <- integer(length(y))
+    rowsum_selected_cols <- rowSums(cbind(rep(0, n), bx[,selected_cols]))
+    fitted.values <- integer(n)
     fitted.values[rowsum_selected_cols > 0] <- 1
     confusion.matrix <- table(fitted.values, y)
     LPsol <- list()
+    LPsol$status <- "greedy_OK"
+    greedyw <- integer(p)
+    greedyw[selected_cols] <- 1
+    LPsol$w <- setNames(greedyw, names(bx))  # is w needed for greedy? maybe not
+    LPsol$slack <- 0
+    LPsol$objval <- 0
+    LPsol$fractional <- 0
   }
 
   if(control$opt.solver %in% c('lpSolve','cplex','gurobi')){
@@ -588,7 +595,7 @@ mbsnsing <- setClass('mbsnsing')
 #' @export
 #'
 bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
-  # Make sure no invalid argument exisits and all valid arguments are captured
+  # Make sure no invalid argument exists and all valid arguments are captured
   extraArgs <- list(...)
   if (length(extraArgs)) {
     controlargs <- names(formals(bscontrol)) # legal arg names
@@ -641,11 +648,27 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   # }
   control$bigM <- ncol(x)
 
-  if (control$opt.solver %in% c('cplex','Cplex','CPLEX')) {
+  if (tolower(control$opt.solver) == 'lpsolve') {
+    if(is.element('lpSolve', installed.packages()[,1])) control$opt.solver <- 'lpSolve'
+    else {
+      control$opt.solver <- 'greedy'
+      warning("The lpSolve is not installed. The opt.solver is set to 'greedy' instead.")
+    }
+  }
+
+  if (tolower(control$opt.solver) == 'cplex') {
     if(is.element('cplexAPI', installed.packages()[,1])) control$opt.solver <- 'cplex'
     else {
-      control$opt.solver <- 'lpSolve'
-      warning("The cplexAPI is not installed. The opt.solver is set to 'lpSolve' instead.")
+      control$opt.solver <- 'greedy'
+      warning("The cplexAPI is not installed. The opt.solver is set to 'greedy' instead.")
+    }
+  }
+
+  if (tolower(control$opt.solver) == 'gurobi') {
+    if(is.element('gurobi', installed.packages()[,1])) control$opt.solver <- 'gurobi'
+    else {
+      control$opt.solver <- 'greedy'
+      warning("The cplexAPI is not installed. The opt.solver is set to 'greedy' instead.")
     }
   }
 
@@ -705,7 +728,6 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     bx <- binarize(this.x, this.y, target = this$node.split.target, control = control)
     this.rule <- ""
     nfrac <- 0  # number of fractional solutions from LP
-
     # 'case' is the flag for different cases:
     # 1. perfect split from binarize;
     # 2. no split from LP;
@@ -1078,7 +1100,6 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
   temp[[1L]] <- quote(stats::model.frame) # change the function called
   mf <- eval.parent(temp)
   Terms <- attr(mf, "terms")
-
   # remove factor variables with only 1 unique value
   mfv <- mf[, attr(Terms, "term.labels")]
   factorcol <- sapply(mfv, function(x) is.factor(x))

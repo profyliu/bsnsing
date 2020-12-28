@@ -14,7 +14,7 @@ bscontrol(
   LP.epsilon = 1e-08,
   node.size = 20,
   stop.prob = 0.9,
-  opt.solver = c("cplex", "lpSolve", "gurobi"),
+  opt.solver = c("cplex", "lpSolve", "gurobi", "greedy"),
   opt.model = c("mip", "hybrid", "lp"),
   bigM = 1,
   verbose = F
@@ -39,7 +39,7 @@ bscontrol(
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
-\item{opt.solver}{a character string in the set {'cplex', 'gurobi', 'lpSolve'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.}
+\item{opt.solver}{a character string in the set {'cplex', 'gurobi', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.}
 
 \item{opt.model}{a character string in the set {'mip', 'hybrid', 'lp'} indicating the optimization model to solve in the program. The default is 'mip'. The choice of 'lp' is faster but may sacrifice the classification accuracy.}
 
