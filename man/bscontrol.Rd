@@ -5,27 +5,19 @@
 \title{Define Parameters for the \code{\link{bsnsing}} Fit}
 \usage{
 bscontrol(
-  lambda = 1L,
   bin.size = 5,
-  max.rules = Inf,
   nseg.numeric = 10,
   nseg.factor = 20,
   num2factor = 5,
-  LP.epsilon = 1e-08,
   node.size = 20,
   stop.prob = 0.9,
-  opt.solver = c("cplex", "lpSolve", "gurobi", "greedy"),
-  opt.model = c("mip", "hybrid", "lp"),
-  bigM = 1,
+  opt.solver = c("greedy", "gurobi", "lpSolve", "cplex"),
+  opt.model = c("gini", "error"),
   verbose = F
 )
 }
 \arguments{
-\item{lambda}{the penalty multiplier of the L1 norm of the solution vector.}
-
 \item{bin.size}{the minimum number of observations required in a binarization bucket.}
-
-\item{max.rules}{the upper bound of the L1 norm of the solution vector.}
 
 \item{nseg.numeric}{the maximum number of segments the range of a numeric variable is divided into for each inequality direction.}
 
@@ -33,17 +25,13 @@ bscontrol(
 
 \item{num2factor}{an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.}
 
-\item{LP.epsilon}{any element in the LP solution \code{w} smaller than \code{LP.epsilon} will be taken as zero.}
-
 \item{node.size}{if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.}
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
-\item{opt.solver}{a character string in the set {'cplex', 'gurobi', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.}
+\item{opt.solver}{a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.}
 
-\item{opt.model}{a character string in the set {'mip', 'hybrid', 'lp'} indicating the optimization model to solve in the program. The default is 'mip'. The choice of 'lp' is faster but may sacrifice the classification accuracy.}
-
-\item{bigM}{a positive integer representing the big M value used in the MIP formulation. The default is 1.}
+\item{opt.model}{a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.}
 
 \item{verbose}{a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.}
 }

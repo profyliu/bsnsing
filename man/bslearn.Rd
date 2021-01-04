@@ -11,13 +11,13 @@ bslearn(bx, y, control = bscontrol())
 
 \item{y}{an integer vector with binary entries.}
 
-\item{control}{an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{lambda}, the penalty factor on the L1 norm of the solution, \emph{max.rules}, the maximum L1 norm of the solution, \emph{epsilon}, a small positive number serving as the threshold for numerical zero, \emph{bigM}, a positive integer serving as the big M in a MIP formulation, \emph{opt.model}, a character string in {\code{'mip', 'lp', 'hybrid'}} indicating the type of optimization model to solve, \emph{opt.solver}, a character string in {\code{'cplex', 'lpSolve'}} indicating the optimization solver to use.}
+\item{control}{an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'greedy'}} indicating the optimization solver to be used.}
 }
 \value{
 a list containing the splitting solution.
 }
 \description{
-The function solves a mixed integer program (MIP) or a linear program (LP) to minimize the sum of two terms: the number of misclassifications (false positives and false negatives), and \code{lambda} times the L1 norm of the solution vector. The solution vector is of length \code{ncol(bx)}. In an LP, its elements are between 0 and 1; in a MIP, its elements are binary. The L1 norm of the solution vector is constrained to be less than or equal to \code{max.rules}. The optimal rule serves as the split condition in the classification tree built by \code{\link{bsnsing}}.
+The function solves a mixed integer program (MIP) to either maximize the Gini reduction (opt.model = 'gini') or the number of misclassifications (opt.model = 'error'). The optimal rule serves as the split condition in the classification tree built by \code{\link{bsnsing}}.
 }
 \examples{
 data(Auto, package = 'ISLR')
@@ -28,5 +28,4 @@ bx <- binarize(x, y, target = 1)
 # learn the optimal Boolean rule
 bssol <- bslearn(bx, y)
 cat(paste("Optimal rule:" , bssol$rules, "\n"))
-bssol$confusion.matrix
 }

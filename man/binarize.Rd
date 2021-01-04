@@ -38,4 +38,7 @@ head(bx1)
 # binarize x by y = 0
 bx0 <- binarize(x, y, target = 0)
 head(bx0)
+# when selecting only one column from a data frame, use drop = F to maintain
+binarize(Auto[,'mpg', drop = F], y, target = 1)
+
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/bsnsing.R
 \name{predict.mbsnsing}
 \alias{predict.mbsnsing}
-\title{Make Predictions with a Fitted \code{\link{bsnsing}} Model}
+\title{Make Predictions with a \code{\link{bsnsing}} Model}
 \usage{
 \method{predict}{mbsnsing}(object, newdata = NULL, type = c("prob", "class"))
 }
@@ -17,7 +17,7 @@
 a data frame containing the predicted values.
 }
 \description{
-Make Predictions with a Fitted \code{\link{bsnsing}} Model
+Make Predictions with a \code{\link{bsnsing}} Model
 }
 \examples{
 n <- nrow(iris)

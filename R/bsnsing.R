@@ -53,6 +53,9 @@ NULL
 #' # binarize x by y = 0
 #' bx0 <- binarize(x, y, target = 0)
 #' head(bx0)
+#' # when selecting only one column from a data frame, use drop = F to maintain
+#' binarize(Auto[,'mpg', drop = F], y, target = 1)
+#'
 #' @export
 #'
 binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), control = bscontrol()) {
@@ -305,11 +308,11 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
 
 #' Find the Optimal Boolean Rule for Binary Classification
 #'
-#' The function solves a mixed integer program (MIP) or a linear program (LP) to minimize the sum of two terms: the number of misclassifications (false positives and false negatives), and \code{lambda} times the L1 norm of the solution vector. The solution vector is of length \code{ncol(bx)}. In an LP, its elements are between 0 and 1; in a MIP, its elements are binary. The L1 norm of the solution vector is constrained to be less than or equal to \code{max.rules}. The optimal rule serves as the split condition in the classification tree built by \code{\link{bsnsing}}.
+#' The function solves a mixed integer program (MIP) to either maximize the Gini reduction (opt.model = 'gini') or the number of misclassifications (opt.model = 'error'). The optimal rule serves as the split condition in the classification tree built by \code{\link{bsnsing}}.
 #'
 #' @param bx a data frame with binary (0 and 1) entries.
 #' @param y an integer vector with binary entries.
-#' @param control an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{lambda}, the penalty factor on the L1 norm of the solution, \emph{max.rules}, the maximum L1 norm of the solution, \emph{epsilon}, a small positive number serving as the threshold for numerical zero, \emph{bigM}, a positive integer serving as the big M in a MIP formulation, \emph{opt.model}, a character string in {\code{'mip', 'lp', 'hybrid'}} indicating the type of optimization model to solve, \emph{opt.solver}, a character string in {\code{'cplex', 'lpSolve'}} indicating the optimization solver to use.
+#' @param control an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'greedy'}} indicating the optimization solver to be used.
 #'
 #' @return a list containing the splitting solution.
 #' @examples
@@ -321,229 +324,272 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
 #' # learn the optimal Boolean rule
 #' bssol <- bslearn(bx, y)
 #' cat(paste("Optimal rule:" , bssol$rules, "\n"))
-#' bssol$confusion.matrix
 #' @export
 
 bslearn <- function(bx, y, control = bscontrol()) {
-
+  if (dim(bx)[1] != length(y)) stop("Dimensions of bx and y do not match.")
+  verbose <- control$verbose
   n <- dim(bx)[1]
   p <- dim(bx)[2]
-  if (n != length(y)) stop("Dimensions of bx and y do not match.")
+  n1 <- sum(y==1L)
+  n0 <- n - n1
+  index1 <- (1:n)[y == 1]
+  index0 <- (1:n)[y == 0]
+  bxcolnames <- colnames(bx)
 
-  # parse control parameters
-  verbose <- control$verbose
-  lambda <- control$lambda
-  max.rules <- control$max.rules
-  epsilon <- control$LP.epsilon
-  mip <- ifelse(control$opt.model %in% c('mip', 'MIP'), T, F)
-  bigM <- ifelse(mip, min(max.rules, control$bigM), 1L)
-  if (max.rules > p) max.rules <- p
+  # Build the Optimization model if opt.solver is not "greedy"; otherwise, use the greedy method
+  if(control$opt.solver != "greedy"){
+    # all variable column names [z1 ... zn | w1 ... wp | zP1zN1 zP1zN2 ... zP1zNn0 zP2zN1 ... zP2zNn0 ... ... zPn1zNn0]
+    if(control$opt.model == 'gini'){
+      allcolnames <- c(paste0('o',seq(n)), bxcolnames, paste0('t', seq(n0*n1)))
+    } else {
+      allcolnames <- c(paste0('o',seq(n)), bxcolnames)
+    }
 
-  # Decide integer variables
-  if (mip) {
-    #int.vec = 1:p
-    int.vec = c(1:p, p + which(y == 0))  # requiring w and slacks corresponding to y == 0 to be integer
-    #int.vec = p + which(y == 0)
+    # Build sparse A matrix
+    ri <- c()  # row index vector
+    ci <- c()  # col index vector
+    va <- c()  # value vector
+    # B_ik w_k - z_i <= 0 for all i = 1..n, k = 1..p
+    ri <- c(ri, seq(n*p))
+    ci <- c(ci, rep(1:n, each = p))
+    va <- c(va, rep(-1L,n*p))
+    for(i in 1:n){
+      indk <- which(bx[i,] == 1L)
+      if(length(indk)){
+        ri <- c(ri, (i-1)*p+indk)
+        ci <- c(ci, n+indk)
+        va <- c(va, rep(1L, length(indk)))
+      }
+    }
+    # sum(B_ik w_k) - z_i >= 0 for all i = 1..n
+    ri <- c(ri, n*p+(1:n))
+    ci <- c(ci, 1:n)
+    va <- c(va, rep(-1L,n))
+    for(i in 1:n){
+      indk <- which(bx[i,] == 1L)
+      if(length(indk)){
+        ri <- c(ri, n*p+rep(i,length(indk)))
+        ci <- c(ci, n+indk)
+        va <- c(va, rep(1L, length(indk)))
+      }
+    }
+    if(control$opt.model == 'gini'){
+      # theta_ij + z_i <= 1 for i in P and j in N
+      ri <- c(ri, (n*p + n) + seq(n0*n1))
+      ci <- c(ci, rep(index1, each=n0))
+      va <- c(va, rep(1L,n0*n1))
+      ri <- c(ri, (n*p + n)+seq(n0*n1))
+      ci <- c(ci, (n + p)+seq(n0*n1))
+      va <- c(va, rep(1L, n0*n1))
+      # theta_ij - z_j <= 0 for i in P and j in N
+      ri <- c(ri, (n*p + n + n0*n1) + seq(n0*n1))
+      ci <- c(ci, rep(index0, n1))
+      va <- c(va, rep(-1L,n0*n1))
+      ri <- c(ri, (n*p + n + n0*n1) + seq(n0*n1))
+      ci <- c(ci, (n + p)+seq(n0*n1))
+      va <- c(va, rep(1L, n0*n1))
+    }
+
+    # Objective coefficient (not including the constant n0*n1)
+    temp <- rep(-n0, n)
+    temp[index0] <- n1
+    if(control$opt.model == 'gini'){
+      objcoef <- c(temp, rep(1e-5,p), rep(-2L, n0*n1))  # 1e-5 is to slightly penalize w
+    } else {
+      objcoef <- c(temp, rep(1e-5,p))
+    }
+
+    if(control$opt.model == 'gini'){
+      # Right-hand side vector
+      rhs <- c(rep(0L, n*p),
+               rep(0L, n),
+               rep(1L, n0*n1),
+               rep(0L, n0*n1))
+
+      # Constraint sense
+      csense <- c(rep('<', n*p),
+                  rep('>', n),
+                  rep('<', n0*n1),
+                  rep('<', n0*n1))
+
+      # Variable types
+      vtype <- c(rep('C', n), rep('B', p), rep('C', n0*n1))
+
+      # variable bounds
+      lb <- rep(0L, n + p + n0*n1)
+      ub <- rep(1L, n + p + n0*n1)
+    } else {
+      # Right-hand side vector
+      rhs <- c(rep(0L, n*p),
+               rep(0L, n))
+      # Constraint sense
+      csense <- c(rep('<', n*p),
+                  rep('>', n))
+      # Variable types
+      vtype <- c(rep('C', n), rep('B', p))
+      # variable bounds
+      lb <- rep(0L, n + p)
+      ub <- rep(1L, n + p)
+    }
+
+    # Build and solve the MIP model using the selected solver
+    if(control$opt.solver == 'gurobi'){
+      grbmod <- list(A = slam::simple_triplet_matrix(ri,ci,va),
+                     rhs = rhs, sense = csense, grbmodsense = 'min', obj = objcoef, vtype = vtype,
+                     lb = lb, ub = ub)
+      grbparams <- list(OutputFlag = 0)
+      if (verbose) cat(paste("Running Gurobi ... nrow:", length(rhs), "ncol:", length(lb), "nz:", length(ri), "integer:", p, "..."))
+      grbtime <- system.time(
+        grbsol <- gurobi::gurobi(grbmod, grbparams)
+      )
+      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... "))
+      solution_zw <- setNames((grbsol$x)[1:(n+p)], allcolnames[1:(n+p)])
+    } else if(control$opt.solver == 'lpSolve'){
+      # No need to set bounds because all variables in lpSolve are assumed non-negative
+      # theta_ij + z_i <= 1 for i in P and j in N and theta_ij >= 0 imply z_i <= 1 for i in P
+      # But if opt.model == 'error', then need to add z_i <= 1 for i in P
+      if(control$opt.model == 'error'){
+        ri <- c(ri, n*p + n + 1:n1)
+        ci <- c(ci, index1)
+        va <- c(va, rep(1L, n1))
+        rhs <- c(rhs, rep(1L,n1))
+        csense <- c(csense, rep('<',n1))
+      }
+      if (verbose) cat(paste("Running lpSolve ... nrow:", length(rhs), "ncol:", length(lb), "nz:", length(ri), "integer:", p, "..."))
+      lptime <- system.time(
+        sol <- lpSolve::lp(direction = "min", objective.in = objcoef, dense.const = matrix(c(ri,ci,va), ncol = 3),
+                           const.dir = csense, const.rhs = rhs, binary.vec = (n+1):(n+p))
+      )
+      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
+      solution_zw <- setNames((sol$solution)[1:(n+p)], allcolnames[1:(n+p)])
+    } else if(control$opt.solver == 'cplex'){
+      # Use cplex
+      cplex.env <- cplexAPI::openEnvCPLEX()
+      cplex.prob <- cplexAPI::initProbCPLEX(cplex.env)
+      cplexAPI::chgProbNameCPLEX(cplex.env, cplex.prob, "bsnsing")
+      cplex.nc <- ifelse(control$opt.model == 'gini', n + p + n0*n1, n + p)
+      cplex.nr <- ifelse(control$opt.model == 'gini', n*p + n + 2*n0*n1, n*p + n)
+      cplex.nz <- length(ri)
+      cplex.obj <- objcoef
+      cplex.rhs <- rhs
+      cplex.sense <- ifelse(csense == '<', 'L', ifelse(csense == '>', 'G', 'E'))
+      cplex.lb <- rep(0, cplex.nc)
+      cplex.ub <- rep(1, cplex.nc)
+      # Set beg cnt ind val
+      spmatA <- matrix(c(ci,ri,va), ncol = 3)
+      spmatA <- spmatA[order(spmatA[,1], spmatA[,2]),]
+      rowcnt <- table(spmatA[,1])
+      cumrowcnt <- cumsum(rowcnt)
+      cplex.beg <- c(0, cumrowcnt[1:(cplex.nc - 1)])
+      cplex.cnt <- as.vector(rowcnt)
+      cplex.ind <- c()
+      for(i in 1:cplex.nc){
+        if(i == 1)
+          cplex.ind <- c(cplex.ind, spmatA[1:cumrowcnt[i], 2] - 1)
+        else
+          cplex.ind <- c(cplex.ind, spmatA[(cumrowcnt[i-1]+1):cumrowcnt[i], 2] - 1)
+      }
+      cplex.val <- spmatA[,3]
+      cplex.ctype <- vtype
+      cplexAPI::copyLpCPLEX(env = cplex.env, lp = cplex.prob, nCols = cplex.nc, nRows = cplex.nr,
+                            lpdir = cplexAPI::CPX_MIN,
+                            objf = cplex.obj, rhs = cplex.rhs, sense = cplex.sense,
+                            matbeg = cplex.beg, matcnt = cplex.cnt, matind = cplex.ind, matval = cplex.val,
+                            lb = cplex.lb, ub = cplex.ub)
+      cplexAPI::copyColTypeCPLEX(cplex.env, cplex.prob, cplex.ctype)
+      if (verbose) cat(paste("Running cplex ... nrow:", cplex.nr, "ncol:", cplex.nc, "nz:", cplex.nz, "integer:", p, "..."))
+      lptime <- system.time(
+        {
+          cplexAPI::mipoptCPLEX(cplex.env, cplex.prob)
+          cplex.sol <- cplexAPI::solutionCPLEX(cplex.env, cplex.prob)
+          cplexAPI::delProbCPLEX(cplex.env, cplex.prob)
+          cplexAPI::closeEnvCPLEX(cplex.env)
+        }
+      )
+      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
+      solution_zw <- setNames((cplex.sol$x)[1:(n+p)], allcolnames[1:(n+p)])
+    }
+    #fitted.values <- (solution_zw)[1:n]
+    #confusion.matrix <- table(fitted.values, y)
+    n.rules <- sum(solution_zw[(n+1):(n+p)] > 0.99)
+    rules <- paste(names(solution_zw[(n+1):(n+p)])[solution_zw[(n+1):(n+p)] > 0.99], collapse = ' | ')
   } else {
-    int.vec = c()
-  }
-
-  if (control$opt.solver == 'lpSolve') {
-    # Use lpSolve
-    n1 <- length(y[y == 1])
-    n0 <- length(y[y == 0])
-    index1 <- (1:n)[y == 1]
-    index0 <- (1:n)[y == 0]
-    const.mat1 <- cbind(bx, setNames(as.data.frame(diag(ifelse(y == 1, 1L, -bigM))), paste0('s', 1:n)))
-    var.names <- colnames(const.mat1)
-    const.mat2 <- setNames(as.data.frame(cbind(diag(rep(1L,p)), matrix(0L, nrow = p, ncol = n))), var.names)
-    const.mat3 <- setNames(as.data.frame(cbind(matrix(1L, nrow = 1, ncol = p), matrix(0L, nrow = 1, ncol = n))), var.names)
-    const.mat <- rbind(const.mat1,
-                       const.mat2,
-                       const.mat3)
-    const.rhs <- c(y, rep(1, p), max.rules)
-    const.dir <- c(ifelse(y == 1, ">=", "<="), rep("<=", p), "<=")
-    objective.in <- c(rep(lambda, p), rep(1, n))
-
-    if (verbose) cat(paste("Running lpSolve ... nrow:", nrow(const.mat), "ncol:", ncol(const.mat), "integer:", length(int.vec), "..."))
-    lptime <- system.time(
-      sol <- lpSolve::lp(direction = "min", objective.in = objective.in, const.mat = const.mat,
-                         const.dir = const.dir, const.rhs = const.rhs, int.vec = int.vec)
-    )
-    if (verbose) cat(paste("Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
-
-    LPsol <- list()
-    LPsol$status <- sol$status
-    LPsol$w <- setNames((sol$solution)[1:p], var.names[1:p])
-    LPsol$slack <- (sol$solution)[(p+1):(p+n)]
-    LPsol$objval <- sol$objval
-    LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
-  } else if(control$opt.solver == 'cplex') {
-    # Use cplex
-    cplex.env <- cplexAPI::openEnvCPLEX()
-    cplex.prob <- cplexAPI::initProbCPLEX(cplex.env)
-    cplexAPI::chgProbNameCPLEX(cplex.env, cplex.prob, "bsnsing")
-    cplex.nc <- p + n
-    cplex.nr <- n + 1
-    cplex.nz <- sum(bx) + n
-    cplex.obj <- c(rep(lambda, p), rep(1, n))
-    cplex.rhs <- c(y, max.rules)
-    cplex.sense <- c(ifelse(y == 1, "G", "L"), "L")
-    cplex.lb <- rep(0, cplex.nc)
-    cplex.ub <- c(rep(1, p), rep(cplexAPI::CPX_INFBOUND, n))
-    cplex.beg <- rep(0, p)
-    cplex.cnt <- rep(0, p)
-    cplex.ind <- c()
-    cplex.val <- c(rep(1, sum(bx) + p), ifelse(y == 1, 1L, -bigM))
-    for (j in 1:p) {
-      cplex.cnt[j] <- sum(bx[,j]) + 1  # number of nonzeros in the column plus 1 (the max.rules constraint coefficient)
-      if (j == 1) {
-        cplex.beg[j] <- 0
-      } else {
-        cplex.beg[j] <- cplex.beg[j-1] + cplex.cnt[j-1]
-      }
-      cplex.ind <- c(cplex.ind, which(bx[,j] != 0) - 1, n)
-    }
-    for (i in 1:n) {
-      cplex.cnt[p + i] <- 1
-      if (i == 1) {
-        cplex.beg[p + i] <- cplex.beg[p] + cplex.cnt[p]
-      } else {
-        cplex.beg[p + i] <- cplex.beg[p + i - 1] + cplex.cnt[p + i - 1]
-      }
-      cplex.ind <- c(cplex.ind, i - 1)
-    }
-
-    cplex.ctype <- rep("C", p + n)
-    cplex.ctype[int.vec] <- "I"
-
-    cplexAPI::copyLpCPLEX(env = cplex.env, lp = cplex.prob, nCols = cplex.nc, nRows = cplex.nr,
-                          lpdir = cplexAPI::CPX_MIN,
-                          objf = cplex.obj, rhs = cplex.rhs, sense = cplex.sense,
-                          matbeg = cplex.beg, matcnt = cplex.cnt, matind = cplex.ind, matval = cplex.val,
-                          lb = cplex.lb, ub = cplex.ub)
-    cplexAPI::copyColTypeCPLEX(cplex.env, cplex.prob, cplex.ctype)
-
-    if (verbose) cat(paste("Running cplex ... nrow:", cplex.nr, "ncol:", cplex.nc, "integer:", length(int.vec), "..."))
-    lptime <- system.time(
-      {
-        cplexAPI::mipoptCPLEX(cplex.env, cplex.prob)
-        cplex.solution <- cplexAPI::solutionCPLEX(cplex.env, cplex.prob)
-        cplexAPI::delProbCPLEX(cplex.env, cplex.prob)
-        cplexAPI::closeEnvCPLEX(cplex.env)
-      }
-    )
-    if (verbose) cat(paste("Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
-
-    LPsol <- list()
-    LPsol$status <- cplex.solution$lpstat
-    LPsol$w <- setNames((cplex.solution$x)[1:p], colnames(bx))
-    LPsol$slack <- (cplex.solution$x)[(p+1):(p+n)]
-    LPsol$objval <- cplex.solution$objval
-    LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
-  } else if(control$opt.solver == 'gurobi'){
-    # Gurobi
-    n1 <- length(y[y == 1])
-    n0 <- length(y[y == 0])
-    index1 <- (1:n)[y == 1]
-    index0 <- (1:n)[y == 0]
-    const.mat1 <- cbind(bx, setNames(as.data.frame(diag(ifelse(y == 1, 1L, -bigM))), paste0('s', 1:n)))
-    var.names <- colnames(const.mat1)
-    const.mat2 <- setNames(as.data.frame(cbind(diag(rep(1L,p)), matrix(0L, nrow = p, ncol = n))), var.names)
-    const.mat3 <- setNames(as.data.frame(cbind(matrix(1L, nrow = 1, ncol = p), matrix(0L, nrow = 1, ncol = n))), var.names)
-    grbmod <- list()
-    const.mat <- rbind(const.mat1,
-                       const.mat2,
-                       const.mat3)
-    grbmod$A <- as.matrix(const.mat, nrow = nrow(const.mat), ncol = ncol(const.mat), byrow = T)
-    grbmod$rhs <- c(y, rep(1, p), max.rules)
-    grbmod$sense <- c(ifelse(y == 1, ">", "<"), rep("<", p), "<")
-    grbmod$grbmodsense <- 'min'
-    grbmod$obj <- c(rep(lambda, p), rep(1, n))
-    grbmod$vtype <- rep("C", p + n)
-    grbmod$vtype[int.vec] <- "B"
-    grbparams <- list(OutputFlag=0)
-    if (verbose) cat(paste("Running GUROBI ... nrow:", nrow(const.mat), "ncol:", ncol(const.mat), "integer:", length(int.vec), "..."))
-    grbtime <- system.time(
-      grbsol <- gurobi(grbmod, grbparams)
-    )
-    if (verbose) cat(paste("Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... "))
-
-    LPsol <- list()
-    LPsol$status <- grbsol$status
-    LPsol$w <- setNames((grbsol$x)[1:p], var.names[1:p])
-    LPsol$slack <- (grbsol$x)[(p+1):(p+n)]
-    LPsol$objval <- grbsol$objval
-    LPsol$fractional <- sum(LPsol$w < 1 - epsilon & LPsol$w > epsilon)
-  } else if(control$opt.solver == 'greedy'){
-    selected_cols <- c()
-    subset.rows <- 1:n
-    subset.cols <- 1:p
-    TP <- rep(0, length(subset.cols))
-    FP <- rep(0, length(subset.cols))
-    while (TRUE){
-      TP[subset.cols] <- 0
-      FP[subset.cols] <- 0
-      for(j in subset.cols){
-        for(i in subset.rows){
-          if (bx[i,j] == 1){
-            if (y[i] == 1){
-              TP[j] <- TP[j] + 1
-            } else {
-              FP[j] <- FP[j] + 1
-            }
+    if(verbose) cat(paste("Running greedy heuristics ..."))
+    if(control$opt.model == 'gini'){
+      selected_cols <- c()
+      subset.rows <- 1:n
+      subset.cols <- 1:p
+      true_pos_indx <- which(y==1)
+      true_neg_indx <- setdiff(1:n, true_pos_indx)
+      FP <- rep(0, p)
+      FN <- rep(0, p)
+      best_obj <- n0*n1  # baseline value when gini reduction is 0
+      while (TRUE){
+        FP[1:p] <- 0
+        FN[1:p] <- 0
+        for(j in subset.cols){
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          FP[j] <- length(intersect(true_neg_indx, pred_pos_indx))
+          FN[j] <- length(intersect(true_pos_indx, pred_neg_indx))
+        }
+        best_j <- 0
+        for(j in subset.cols){
+          this_obj <- n1*FP[j] + n0*FN[j] - 2*FP[j]*FN[j]
+          if (this_obj < best_obj){
+            best_j <- j
+            best_obj <- this_obj
           }
         }
-      }
-      best_net <- -1
-      best_j <- 0
-      for(j in subset.cols){
-        this_net <- TP[j] - FP[j]
-        if (this_net > best_net){
-          best_j <- j
-          best_net <- this_net
+        if (best_j == 0){
+          break
+        } else {
+          selected_cols <- c(selected_cols, best_j)
+          subset.cols <- setdiff(subset.cols, best_j)
         }
       }
-      if (best_net < max(lambda, 0)){
-        break
-      } else {
-        selected_cols <- c(selected_cols, best_j)
-        subset.cols <- setdiff(subset.cols, best_j)
-        subset.rows <- which(bx[,best_j] == 0)
+      n.rules <- length(selected_cols)
+      rules <- paste(names(bx)[selected_cols], collapse = ' | ')
+    } else {
+      selected_cols <- c()
+      subset.rows <- 1:n
+      subset.cols <- 1:p
+      true_pos_indx <- which(y==1)
+      true_neg_indx <- setdiff(1:n, true_pos_indx)
+      TP <- rep(0, p)
+      TN <- rep(0, p)
+      best_accuracy <- 0
+      while (TRUE){
+        TP[1:p] <- 0
+        TN[1:p] <- 0
+        for(j in subset.cols){
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          TP[j] <- length(intersect(true_pos_indx, pred_pos_indx))
+          TN[j] <- length(intersect(true_neg_indx, pred_neg_indx))
+        }
+        best_j <- 0
+        for(j in subset.cols){
+          this_accuracy <- TP[j] + TN[j]
+          if (this_accuracy > best_accuracy){
+            best_j <- j
+            best_accuracy <- this_accuracy
+          }
+        }
+        if (best_j == 0){
+          break
+        } else {
+          selected_cols <- c(selected_cols, best_j)
+          subset.cols <- setdiff(subset.cols, best_j)
+        }
       }
+      n.rules <- length(selected_cols)
+      rules <- paste(names(bx)[selected_cols], collapse = ' | ')
     }
-    n.rules <- length(selected_cols)
-    rules <- paste(names(bx)[selected_cols], collapse = ' | ')
-    rowsum_selected_cols <- rowSums(cbind(rep(0, n), bx[,selected_cols]))
-    fitted.values <- integer(n)
-    fitted.values[rowsum_selected_cols > 0] <- 1
-    confusion.matrix <- table(fitted.values, y)
-    LPsol <- list()
-    LPsol$status <- "greedy_OK"
-    greedyw <- integer(p)
-    greedyw[selected_cols] <- 1
-    LPsol$w <- setNames(greedyw, names(bx))  # is w needed for greedy? maybe not
-    LPsol$slack <- 0
-    LPsol$objval <- 0
-    LPsol$fractional <- 0
+
   }
-
-  if(control$opt.solver %in% c('lpSolve','cplex','gurobi')){
-    if (verbose) cat(paste("fractional: ", LPsol$fractional, "\n"))
-    fitted.values <- ifelse(LPsol$slack <= epsilon, y, (1 - y))
-    confusion.matrix <- table(fitted.values, y)
-    n.rules <- sum(LPsol$w > epsilon)
-    rules <- paste(names(LPsol$w)[LPsol$w > epsilon], collapse = ' | ')
-  }
-
-  bsol <- list(LPsol = LPsol, fitted.values = fitted.values, confusion.matrix = confusion.matrix,
-               n.rules = n.rules, rules = rules)
-
-  # debug
-  # print(rules)
-  # print(LPsol$objval)
-  # print(LPsol$w)
-
+  bsol <- list(n.rules = n.rules, rules = rules)
   return(bsol)
 }
 
@@ -640,13 +686,6 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     }
   }
 
-  # assign the big-M value
-  # if (control$opt.model %in% c('mip', 'MIP')) {
-  #   control$bigM <- ncol(x)
-  # } else {
-  #   control$bigM <- 1L
-  # }
-  control$bigM <- ncol(x)
 
   if (tolower(control$opt.solver) == 'lpsolve') {
     if(is.element('lpSolve', installed.packages()[,1])) control$opt.solver <- 'lpSolve'
@@ -723,7 +762,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     todo.nodes[[1]] <- NULL
     if(verbose) cat(paste("Iter:", iter.count, "exploring node", this$node.number, "\n"))
 
-    this.x <- x[this$node.obs,]
+    this.x <- x[this$node.obs, , drop = F]
     this.y <- y[this$node.obs]
     bx <- binarize(this.x, this.y, target = this$node.split.target, control = control)
     this.rule <- ""
@@ -760,100 +799,15 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
           left.nobs <- length(left.obs)
           right.nobs <- length(right.obs)
           if (left.nobs == 0 | right.nobs == 0) {
-            # cat("Case 3 bsol$rules = ")
-            # cat(bsol$rules)
-            # cat(" LPsol$status = ")
-            # cat((bsol$LPsol)$status)
-            # cat(" LPsol$objval = ")
-            # cat((bsol$LPsol)$objval)
-            # cat(" LPsol$fractional = ")
-            # cat((bsol$LPsol)$fractional)
-            # cat(" LPsol$w = \n")
-            # print((bsol$LPsol)$w)
-            # cat("\n")
-            # cat(" LPsol$slack = \n")
-            # print((bsol$LPsol)$slack)
             if (verbose) cat("Case 3 null split produced. \n")
+            this.rule <- ""
+            case <- 3
+            if (verbose) cat("Terminate as leaf node.\n")
 
-            if(control$opt.model == 'hybrid') {
-              if (verbose) cat("Switching temporarily to MIP and trying again. \n")
-              control$opt.model <- 'mip'
-              if (this$node.split.targe == 1L) {
-                bsol <- bslearn(bx, this.y, control = control)
-              } else {
-                bsol <- bslearn(bx, 1 - this.y, control = control)
-              }
-              control$opt.model <- 'hybrid'
-              if (bsol$n.rules == 0) {
-                this.rule <- ""
-                case <- 2
-                if (verbose) cat("MIP produced an empty rule.\n")
-              } else {
-
-                left.obs <- with(this.x, this$node.obs[which(eval(parse(text = bsol$rules)))])
-                right.obs <- setdiff(this$node.obs, left.obs)
-                left.nobs <- length(left.obs)
-                right.nobs <- length(right.obs)
-                if (left.nobs == 0 | right.nobs == 0) {
-                  this.rule <- ""
-                  case <- 3
-                  if (verbose) cat("Case 3 null split persists under MIP. \n")
-                } else {
-                  this.rule <- bsol$rules
-                  nfrac <- bsol$LPsol['fractional']
-                  if(nfrac > 0) n.frac.splits <- n.frac.splits + 1
-                  case <- 4
-                  if (verbose) cat("Case 3 condition removed. A valid split is produced by MIP. \n")
-                }
-              }
-            }
-            # else if (control$opt.model == 'mip') {
-            #   if (verbose) cat("Flip split target and try MIP again. \n")
-            #   this$node.split.target <- 1 - this$node.split.target
-            #   bx <- binarize(this.x, this.y, target = this$node.split.target, control = control)
-            #   if(!is.data.frame(bx)) {
-            #     this.rule <- bx
-            #     case <- 1
-            #   } else {
-            #     if (this$node.split.targe == 1L) {
-            #       bsol <- bslearn(bx, this.y, control = control)
-            #     } else {
-            #       bsol <- bslearn(bx, 1 - this.y, control = control)
-            #     }
-            #     if (bsol$n.rules == 0) {
-            #       this.rule <- ""
-            #       case <- 2
-            #       if (verbose) cat("An empty rule is produced after target flip.\n")
-            #     } else {
-            #
-            #       left.obs <- with(this.x, this$node.obs[which(eval(parse(text = bsol$rules)))])
-            #       right.obs <- setdiff(this$node.obs, left.obs)
-            #       left.nobs <- length(left.obs)
-            #       right.nobs <- length(right.obs)
-            #       if (left.nobs == 0 | right.nobs == 0) {
-            #         this.rule <- ""
-            #         case <- 3
-            #         if (verbose) cat("Case 3 null split persists after target flip. \n")
-            #       } else {
-            #         this.rule <- bsol$rules
-            #         nfrac <- bsol$LPsol['fractional']
-            #         if(nfrac > 0) n.frac.splits <- n.frac.splits + 1
-            #         case <- 4
-            #         if (verbose) cat("Case 3 condition removed after target flip. A valid split is produced. \n")
-            #       }
-            #     }
-            #   }
-            #
-            # }
-            else {
-              this.rule <- ""
-              case <- 3
-              if (verbose) cat("Terminate as leaf node.\n")
-            }
           } else {
             this.rule <- bsol$rules
-            nfrac <- bsol$LPsol['fractional']
-            if(nfrac > 0) n.frac.splits <- n.frac.splits + 1
+            #nfrac <- bsol$LPsol['fractional']
+            #if(nfrac > 0) n.frac.splits <- n.frac.splits + 1
             case <- 4
           }
         }
@@ -954,7 +908,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
       left.y <- y[left.obs]
       left.n1 <- length(left.y[left.y == 1])
       left.n0 <- length(left.y[left.y == 0])
-      left.class <- ifelse(this$node.split.targe == 1L, 1L, 0L)
+      left.class <- ifelse(left.n1 >= left.n0, 1L, 0L)
       left.split.rule <- ""
       left.split.target <- ifelse(left.n1 >= left.n0, 1L, 0L)
       left.probability <- ifelse(left.n1 >= left.n0, left.n1/(left.n1 + left.n0), left.n0/(left.n1 + left.n0))
@@ -967,7 +921,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
       right.y <- y[right.obs]
       right.n1 <- length(right.y[right.y == 1])
       right.n0 <- length(right.y[right.y == 0])
-      right.class <- ifelse(this$node.split.targe == 1L, 0L, 1L)
+      right.class <- ifelse(right.n1 >= right.n0, 1L, 0L)
       right.split.rule <- ""
       right.split.target <- ifelse(right.n1 >= right.n0, 1L, 0L)
       right.probability <- ifelse(right.n1 >= right.n0, right.n1/(right.n1 + right.n0), right.n0/(right.n1 + right.n0))
@@ -1101,7 +1055,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
   mf <- eval.parent(temp)
   Terms <- attr(mf, "terms")
   # remove factor variables with only 1 unique value
-  mfv <- mf[, attr(Terms, "term.labels")]
+  mfv <- mf[, attr(Terms, "term.labels"), drop = F]  # drop = F means return a data frame (not a vector) when there is one column
   factorcol <- sapply(mfv, function(x) is.factor(x))
   factormfv <- mfv[, factorcol, drop = F]
   collevels <- sapply(factormfv, function(x) length(levels(x)))
@@ -1144,18 +1098,14 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 
 
 #' Define Parameters for the \code{\link{bsnsing}} Fit
-#' @param lambda the penalty multiplier of the L1 norm of the solution vector.
 #' @param bin.size the minimum number of observations required in a binarization bucket.
-#' @param max.rules the upper bound of the L1 norm of the solution vector.
 #' @param nseg.numeric the maximum number of segments the range of a numeric variable is divided into for each inequality direction.
 #' @param nseg.factor the maximum number of unique levels allowed in a factor variable.
 #' @param num2factor an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.
-#' @param LP.epsilon any element in the LP solution \code{w} smaller than \code{LP.epsilon} will be taken as zero.
 #' @param node.size if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'cplex', 'gurobi', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'cplex'.
-#' @param opt.model a character string in the set {'mip', 'hybrid', 'lp'} indicating the optimization model to solve in the program. The default is 'mip'. The choice of 'lp' is faster but may sacrifice the classification accuracy.
-#' @param bigM a positive integer representing the big M value used in the MIP formulation. The default is 1.
+#' @param opt.solver a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.
+#' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
 #' @examples
@@ -1165,24 +1115,15 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @export
 #'
 
-bscontrol <- function(lambda = 1L, bin.size = 5, max.rules = Inf,
+bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
-                            LP.epsilon = 1e-8,
                             node.size = 20, stop.prob = 0.9,
-                            opt.solver = c('cplex', 'lpSolve','gurobi','greedy'),
-                            opt.model = c('mip', 'hybrid', 'lp'), bigM = 1,
+                            opt.solver = c('greedy', 'gurobi','lpSolve','cplex'),
+                            opt.model = c('gini','error'),
                             verbose = F) {
-  if (lambda < 0L) {
-    warning("The value of 'lambda' supplied is < 0; the value 1 was used instead")
-    lambda <- 1L
-  }
   if (bin.size < 1L) {
     warning("The value of 'bin.size' supplied is < 1; the value 1 was used instead")
     bin.size <- 1L
-  }
-  if (max.rules < 1L) {
-    warning("The value of 'max.rules' supplied is < 1; the value 1 was used instead")
-    max.rules <- 1L
   }
   if (nseg.numeric < 3L) {
     warning("The value of 'nseg.numeric' supplied is < 3; the value 3 was used instead")
@@ -1205,10 +1146,10 @@ bscontrol <- function(lambda = 1L, bin.size = 5, max.rules = Inf,
     node.size <- 1L
   }
 
-  control <- list(lambda = lambda, bin.size = bin.size, max.rules = max.rules, nseg.numeric = nseg.numeric,
-       nseg.factor = nseg.factor, num2factor = num2factor, LP.epsilon = LP.epsilon, node.size = node.size, stop.prob = stop.prob,
+  control <- list(bin.size = bin.size, nseg.numeric = nseg.numeric,
+       nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
        opt.solver = match.arg(opt.solver),
-       opt.model = match.arg(opt.model), bigM = bigM, verbose = verbose)
+       opt.model = match.arg(opt.model), verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }
@@ -1380,7 +1321,7 @@ summary.bsnsing <- function(object = stop("no 'object' arg"), ...) {
   return(tree.summary)
 }
 
-#' Print the Summary of \code{\link{bsnsing}} Model Fits
+#' Print the Summary of \code{\link{bsnsing}} Model
 #'
 #' @param object an object of class \code{\link{summary.bsnsing}}.
 #' @export
@@ -1584,7 +1525,7 @@ predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
   }
 }
 
-#' Make Predictions with a Fitted \code{\link{bsnsing}} Model
+#' Make Predictions with a \code{\link{bsnsing}} Model
 #'
 #' @param object an object of class \code{\link{mbsnsing}}.
 #' @param an optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.
@@ -1639,3 +1580,85 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
     return(mpred[, 'class'])
   } else stop("unrecognized 'type' arg")
 }
+
+#' Generate latex code for plotting the bsnsing tree
+#'
+#' If the file argument is supplied, this function will invoke the external programs latex, dvips and ps2pdf. If these programs are not available, only the latex code will be generated. If the file argument is left empty, the latex code will be written to the console screen. The latex code utilizes the following  packages: pstricks, pst-node, pst-tree.
+#' @param object an object of class \code{\link{bsnsing}}.
+#' @param file a writable connection or a character string naming the file to write to. If not supplied, the output will be written to the console.
+#' @param class_label a character vector of two elements describing leaf node labels (for 0 and 1)
+#' @param node_color a character vector of two elements describing node colors (for 0 and 1)
+#' @return NA
+#' @examples
+#' # Suppose bs is a bsnsing object
+#' plot(bs)
+#' plot(bs, file = "/path/to/destination/filename.tex")
+#' @export
+#'
+plot.bsnsing <- function(object, file = "", class_label = c('Neg','Pos'),
+                    node_color = c('red','green'), verbose = F, ...) {
+  if (!inherits(object, "bsnsing")) stop("Not a legitimate \"bsnsing\" object")
+
+  nodes <- (summary(object))$nodes
+
+  if(file != ""){
+    pathname <- dirname(file)
+    basename <- basename(file)
+    nameparts <- strsplit(basename, "\\.")[[1]]
+    stemname <- nameparts[1]
+    fullname <- paste0(pathname, "/", stemname, ".tex")
+    cat("\n", file = fullname, append = F)
+  } else {
+    fullname <- ""
+  }
+
+  cat("\\documentclass[12pt]{article}
+ \\usepackage{pstricks,pst-node,pst-tree}
+ \\pagestyle{empty}
+ \\begin{document}
+ \\begin{center}
+\\psset{linecolor=black,tnsep=1pt,tndepth=0cm,tnheight=0cm,treesep=1.2cm,levelsep=56pt,radius=10pt}\n", file = fullname, append = T)
+
+  for(i in 1:nrow(nodes)) {
+    depth_chg <- ifelse(i==1, 0, nodes[i,'depth'] - nodes[i-1,'depth'])
+    if(depth_chg == 1){
+      cat("{\n", file = fullname, append = T)
+    } else if(depth_chg == -1){
+      cat("}\n", file = fullname, append = T)
+    }
+    if(!nodes[i, 'is.leaf']){
+      rule_text <- unlist(strsplit(as.character(nodes[i,'rule']), "|", fixed = T))
+      rule_disp <- ""
+      for(i in 1:length(rule_text)){
+        rt <- trimws(rule_text[i])
+        rt <- gsub("<","$<$",rt)
+        rt <- gsub(">","$>$",rt)
+        rt <- gsub("%in%", 'in', rt)
+        if(i > 1){
+          rule_disp <- paste0(rule_disp, "\\\\ \\texttt{or} ", rt)
+        } else {
+          rule_disp <- rt
+        }
+      }
+      cat(paste0("\\pstree[treemode=D]{\\Tcircle{ ", nodes[i,'node.number'], " }~[tnpos=l]{\\shortstack[r]{", rule_disp, "}}~[tnpos=r]{\\shortstack[r]{", sprintf("%1.3f", nodes[i,'prob.1']),"}}}\n"), file = fullname, append = T)
+    } else {
+      cat(paste0("\\Tcircle[fillcolor=", node_color[nodes[i,'predicted.class'] + 1], ",fillstyle=solid]{ ", nodes[i,'node.number'], " }~{\\shortstack{\\makebox[0pt][c]{\\texttt{", class_label[nodes[i,'predicted.class'] + 1], "}}\\\\", nodes[i,'n1'] + nodes[i,'n0'], "}}
+    ~[tnpos=r]{\\shortstack[r]{", sprintf("%1.3f", nodes[i,'prob.1']), "}}\n"), file = fullname, append = T)
+    }
+  }
+  cat("}\n", file = fullname, append = T)
+  cat("\\end{center}\n", file = fullname, append = T)
+  cat("\\end{document}\n", file = fullname, append = T)
+
+  # Run latex, dvips and ps2pdf to create the pdf file
+  if(file != ""){
+    latex_cmd <- paste0("latex -interaction=nonstopmode -output-directory=", pathname, " ", fullname)
+    dvips_cmd <- paste0("dvips -o ", pathname, "/", stemname, ".ps ", pathname, "/", stemname, ".dvi")
+    ps2pdf_cmd <- paste0("ps2pdf ", pathname, "/", stemname, ".ps ", pathname, "/", stemname, ".pdf")
+    all_cmd <- paste(c(latex_cmd, dvips_cmd, ps2pdf_cmd), collapse = " && ")
+    system(all_cmd, show.output.on.console=verbose,
+           minimized = !verbose, invisible = !verbose)
+    cat(paste0("\nOutputs written to ", pathname, "/", stemname, ".*\n"))
+  }
+}
+

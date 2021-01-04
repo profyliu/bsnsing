@@ -2,7 +2,7 @@
 % Please edit documentation in R/bsnsing.R
 \name{print.summary.bsnsing}
 \alias{print.summary.bsnsing}
-\title{Print the Summary of \code{\link{bsnsing}} Model Fits}
+\title{Print the Summary of \code{\link{bsnsing}} Model}
 \usage{
 \method{print}{summary.bsnsing}(object, print.call = T, ...)
 }
@@ -10,5 +10,5 @@
 \item{object}{an object of class \code{\link{summary.bsnsing}}.}
 }
 \description{
-Print the Summary of \code{\link{bsnsing}} Model Fits
+Print the Summary of \code{\link{bsnsing}} Model
 }
