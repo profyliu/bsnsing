@@ -535,21 +535,24 @@ bslearn <- function(bx, y, control = bscontrol()) {
           FN[j] <- length(intersect(true_pos_indx, pred_neg_indx))
         }
         best_j <- 0
+        this_round_best <- best_obj
         for(j in subset.cols){
           this_obj <- n1*FP[j] + n0*FN[j] - 2*FP[j]*FN[j]
-          if (this_obj < (control$greedy.level)*best_obj){
+          if (this_obj < this_round_best){
             best_j <- j
-            best_obj <- this_obj
+            this_round_best <- this_obj
           }
         }
         if (best_j == 0){
           break
         } else {
+          if(this_round_best >= (control$greedy.level)*best_obj) break
           pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
           pred_pos_indx <- setdiff(1:n, pred_neg_indx)
           if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
           selected_cols <- c(selected_cols, best_j)
           subset.cols <- setdiff(subset.cols, best_j)
+          best_obj <- this_round_best
         }
       }
       n.rules <- length(selected_cols)
@@ -573,21 +576,24 @@ bslearn <- function(bx, y, control = bscontrol()) {
           TN[j] <- length(intersect(true_neg_indx, pred_neg_indx))
         }
         best_j <- 0
+        this_round_best <- best_accuracy
         for(j in subset.cols){
           this_accuracy <- TP[j] + TN[j]
-          if (this_accuracy*(control$greedy.level) > best_accuracy){
+          if (this_accuracy > this_round_best){
             best_j <- j
-            best_accuracy <- this_accuracy
+            this_round_best <- this_accuracy
           }
         }
         if (best_j == 0){
           break
         } else {
+          if(this_round_best*(control$greedy.level) <= best_accuracy) break
           pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
           pred_pos_indx <- setdiff(1:n, pred_neg_indx)
           if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
           selected_cols <- c(selected_cols, best_j)
           subset.cols <- setdiff(subset.cols, best_j)
+          best_accuracy <- this_round_best
         }
       }
       n.rules <- length(selected_cols)
@@ -1112,7 +1118,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
 #' @param opt.solver a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
-#' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (error or gini) after the addition multiplied by greedy.level is greater than the split performance before the addition. A lower value of greedy.level tend to produce single-variable splits.
+#' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
 #' @examples
@@ -1652,6 +1658,7 @@ plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
         rt <- gsub("<","$<$",rt)
         rt <- gsub(">","$>$",rt)
         rt <- gsub("%in%", 'in', rt)
+        rt <- gsub("==", "$=$", rt)
         if(k > 1){
           rule_disp <- paste0(rule_disp, "\\\\ \\texttt{or} ", rt)
         } else {
