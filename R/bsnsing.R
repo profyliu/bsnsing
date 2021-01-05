@@ -1608,7 +1608,9 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
 #' @param class_colors a character vector of two elements for leaf node color (for 0 and 1)
 #' @param rule_font a string specifying the font size of the split rule at each non-leaf node
 #' @param rule_color a string specifying the color of the split rule and node, e.g., blue, gray, black, etc. For a list of all usable colors, see https://en.wikibooks.org/wiki/LaTeX/Colors
-#' @param footnote a boolean value specifying whether to add annotation text to the PDF page. The default is False.
+#' @param footnote a boolean value indicating whether to add annotation text to the PDF page. The default is False.
+#' @param landscape a boolean value indicating if the PDF page should be in landscape layout. The default is False.
+#' @param papersize a string specifying the PDF paper size. The default is 'a0paper'.
 #' @return NA
 #' @examples
 #' # Suppose bs is a bsnsing object
@@ -1620,9 +1622,12 @@ plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
                     class_colors = c('red','green'),
                     rule_font = c("footnotesize","scriptsize","tiny","normalsize","small"),
                     rule_color = "blue", footnote = F,
+                    landscape = F,
+                    papersize = c('a0paper','a1paper','a2paper','a3paper','a4paper','a5paper','a6paper','b0paper','b1paper','b2paper','b3paper','b4paper','b5paper','b6paper','c0paper','c1paper','c2paper','c3paper','c4paper','c5paper','c6paper','b0j','b1j','b2j','b3j','b4j','b5j','b6j','ansiapaper','ansibpaper','ansicpaper','ansidpaper','ansiepaper','letterpaper','executivepaper','legalpaper'),
                     verbose = F, ...) {
   if (!inherits(object, "bsnsing")) stop("Not a legitimate \"bsnsing\" object")
   rule_font <- match.arg(rule_font)
+  papersize <- match.arg(papersize)
   nodes <- (summary(object))$nodes
 
   if(file != ""){
@@ -1637,11 +1642,12 @@ plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
   }
 
   cat("\\documentclass[12pt]{article}
- \\usepackage{pstricks,pst-node,pst-tree,xcolor}
- \\pagestyle{empty}
+ \\usepackage{pstricks,pst-node,pst-tree,xcolor}\n", file = fullname, append = T)
+  cat(paste0("\\usepackage[", ifelse(landscape, "landscape","portrait"),",", papersize, "]{geometry}\n"), file = fullname, append = T)
+  cat("\\pagestyle{empty}
  \\begin{document}
  \\begin{center}
-\\psset{linecolor=black,tnsep=1pt,tndepth=0cm,tnheight=0cm,treesep=1.2cm,levelsep=56pt,radius=10pt}\n", file = fullname, append = T)
+ \\psset{linecolor=black,tnsep=1pt,tndepth=0cm,tnheight=0cm,treesep=1.2cm,levelsep=56pt,radius=10pt}\n", file = fullname, append = T)
 
   for(i in 1:nrow(nodes)) {
     depth_chg <- ifelse(i==1, 0, nodes[i,'depth'] - nodes[i-1,'depth'])
@@ -1687,8 +1693,7 @@ plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
     dvips_cmd <- paste0("dvips -o ", pathname, "/", stemname, ".ps ", pathname, "/", stemname, ".dvi")
     ps2pdf_cmd <- paste0("ps2pdf ", pathname, "/", stemname, ".ps ", pathname, "/", stemname, ".pdf")
     all_cmd <- paste(c(latex_cmd, dvips_cmd, ps2pdf_cmd), collapse = " && ")
-    system(all_cmd, show.output.on.console=verbose,
-           minimized = !verbose, invisible = !verbose)
+    system(all_cmd)
     cat(paste0("\nOutputs written to ", pathname, "/", stemname, ".*\n"))
   }
 }

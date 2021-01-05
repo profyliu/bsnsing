@@ -34,7 +34,7 @@ bscontrol(
 
 \item{opt.model}{a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.}
 
-\item{greedy.level}{a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (error or gini) after the addition multiplied by greedy.level is greater than the split performance before the addition. A lower value of greedy.level tend to produce single-variable splits.}
+\item{greedy.level}{a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.}
 
 \item{verbose}{a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.}
 }

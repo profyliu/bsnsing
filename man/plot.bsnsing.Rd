@@ -12,6 +12,13 @@
   rule_font = c("footnotesize", "scriptsize", "tiny", "normalsize", "small"),
   rule_color = "blue",
   footnote = F,
+  landscape = F,
+  papersize = c("a0paper", "a1paper", "a2paper", "a3paper", "a4paper", "a5paper",
+    "a6paper", "b0paper", "b1paper", "b2paper", "b3paper", "b4paper", "b5paper",
+    "b6paper", "c0paper", "c1paper", "c2paper", "c3paper", "c4paper", "c5paper",
+    "c6paper", "b0j", "b1j", "b2j", "b3j", "b4j", "b5j", "b6j", "ansiapaper",
+    "ansibpaper", "ansicpaper", "ansidpaper", "ansiepaper", "letterpaper",
+    "executivepaper", "legalpaper"),
   verbose = F,
   ...
 )
@@ -29,7 +36,11 @@
 
 \item{rule_color}{a string specifying the color of the split rule and node, e.g., blue, gray, black, etc. For a list of all usable colors, see https://en.wikibooks.org/wiki/LaTeX/Colors}
 
-\item{footnote}{a boolean value specifying whether to add annotation text to the PDF page. The default is False.}
+\item{footnote}{a boolean value indicating whether to add annotation text to the PDF page. The default is False.}
+
+\item{landscape}{a boolean value indicating if the PDF page should be in landscape layout. The default is False.}
+
+\item{papersize}{a string specifying the PDF paper size. The default is 'a0paper'.}
 }
 \value{
 NA
