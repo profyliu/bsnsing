@@ -13,6 +13,7 @@ bscontrol(
   stop.prob = 0.9,
   opt.solver = c("greedy", "gurobi", "lpSolve", "cplex"),
   opt.model = c("gini", "error"),
+  greedy.level = 0.9,
   verbose = F
 )
 }
@@ -32,6 +33,8 @@ bscontrol(
 \item{opt.solver}{a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.}
 
 \item{opt.model}{a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.}
+
+\item{greedy.level}{a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (error or gini) after the addition multiplied by greedy.level is greater than the split performance before the addition. A lower value of greedy.level tend to produce single-variable splits.}
 
 \item{verbose}{a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.}
 }

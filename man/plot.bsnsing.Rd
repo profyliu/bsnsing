@@ -7,8 +7,11 @@
 \method{plot}{bsnsing}(
   object,
   file = "",
-  class_label = c("Neg", "Pos"),
-  node_color = c("red", "green"),
+  class_labels = c("Neg", "Pos"),
+  class_colors = c("red", "green"),
+  rule_font = c("footnotesize", "scriptsize", "tiny", "normalsize", "small"),
+  rule_color = "blue",
+  footnote = F,
   verbose = F,
   ...
 )
@@ -18,9 +21,15 @@
 
 \item{file}{a writable connection or a character string naming the file to write to. If not supplied, the output will be written to the console.}
 
-\item{class_label}{a character vector of two elements describing leaf node labels (for 0 and 1)}
+\item{class_labels}{a character vector of two elements for leaf node label (for 0 and 1)}
 
-\item{node_color}{a character vector of two elements describing node colors (for 0 and 1)}
+\item{class_colors}{a character vector of two elements for leaf node color (for 0 and 1)}
+
+\item{rule_font}{a string specifying the font size of the split rule at each non-leaf node}
+
+\item{rule_color}{a string specifying the color of the split rule and node, e.g., blue, gray, black, etc. For a list of all usable colors, see https://en.wikibooks.org/wiki/LaTeX/Colors}
+
+\item{footnote}{a boolean value specifying whether to add annotation text to the PDF page. The default is False.}
 }
 \value{
 NA

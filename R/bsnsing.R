@@ -537,7 +537,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
         best_j <- 0
         for(j in subset.cols){
           this_obj <- n1*FP[j] + n0*FN[j] - 2*FP[j]*FN[j]
-          if (this_obj < best_obj){
+          if (this_obj < (control$greedy.level)*best_obj){
             best_j <- j
             best_obj <- this_obj
           }
@@ -545,6 +545,9 @@ bslearn <- function(bx, y, control = bscontrol()) {
         if (best_j == 0){
           break
         } else {
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
           selected_cols <- c(selected_cols, best_j)
           subset.cols <- setdiff(subset.cols, best_j)
         }
@@ -572,7 +575,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
         best_j <- 0
         for(j in subset.cols){
           this_accuracy <- TP[j] + TN[j]
-          if (this_accuracy > best_accuracy){
+          if (this_accuracy*(control$greedy.level) > best_accuracy){
             best_j <- j
             best_accuracy <- this_accuracy
           }
@@ -580,6 +583,9 @@ bslearn <- function(bx, y, control = bscontrol()) {
         if (best_j == 0){
           break
         } else {
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
           selected_cols <- c(selected_cols, best_j)
           subset.cols <- setdiff(subset.cols, best_j)
         }
@@ -1106,6 +1112,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
 #' @param opt.solver a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
+#' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (error or gini) after the addition multiplied by greedy.level is greater than the split performance before the addition. A lower value of greedy.level tend to produce single-variable splits.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
 #' @examples
@@ -1120,6 +1127,7 @@ bscontrol <- function(bin.size = 5,
                             node.size = 20, stop.prob = 0.9,
                             opt.solver = c('greedy', 'gurobi','lpSolve','cplex'),
                             opt.model = c('gini','error'),
+                            greedy.level = 0.9,
                             verbose = F) {
   if (bin.size < 1L) {
     warning("The value of 'bin.size' supplied is < 1; the value 1 was used instead")
@@ -1139,17 +1147,21 @@ bscontrol <- function(bin.size = 5,
   }
   if (stop.prob < 0 | stop.prob > 1) {
     warning("The value of 'stop.prob' supplied is not in [0, 1]; the value 0.97 was used instead")
-    stop.prob <- 0.95
+    stop.prob <- 0.9
   }
   if (node.size < 1L) {
     warning("The value of 'node.size' supplied is < 1; the value 3 was used instead")
     node.size <- 1L
   }
+  if (greedy.level < 0 | greedy.level > 1) {
+    warning("The value of 'greedy.level' supplied is not in [0, 1]; the value 0.9 was used instead")
+    greedy.level <- 0.9
+  }
 
   control <- list(bin.size = bin.size, nseg.numeric = nseg.numeric,
        nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
        opt.solver = match.arg(opt.solver),
-       opt.model = match.arg(opt.model), verbose = verbose)
+       opt.model = match.arg(opt.model), greedy.level = greedy.level, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }
@@ -1627,10 +1639,10 @@ plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
 
   for(i in 1:nrow(nodes)) {
     depth_chg <- ifelse(i==1, 0, nodes[i,'depth'] - nodes[i-1,'depth'])
-    if(depth_chg == 1){
+    if(depth_chg >= 1){
       cat("{\n", file = fullname, append = T)
-    } else if(depth_chg == -1){
-      cat("}\n", file = fullname, append = T)
+    } else if(depth_chg <= -1){
+      cat(paste0(paste0(rep("}", -depth_chg), collapse = ""), "\n"), file = fullname, append = T)
     }
     if(!nodes[i, 'is.leaf']){
       rule_text <- unlist(strsplit(as.character(nodes[i,'rule']), "|", fixed = T))
