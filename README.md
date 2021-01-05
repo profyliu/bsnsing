@@ -1,15 +1,14 @@
 # bsnsing
 Learn a Classification Tree using Boolean Sensing
 
-A classification tree (or decision tree classifier) is a predictive model represented in a tree-like structure. Without making excessive assumptions about the data distribution, a classification tree partitions the input space into rectilinear regions and ultimately gives a set of If...Then... rules to classify outputs or make predictions. 
+Other tree-building methods, such as ctree and rpart available in R, utilize only a single variable in each split, which limits the expressiveness and in some cases the predictive accuracy of the tree model. 
 
-Prevalent tree-building methods, such as ctree and rpart available in R, utilize only a single variable in each split, which drastically limits the expressiveness and in some cases the predictive accuracy of the tree model. 
+In bsnsing, an optimization problem is solved at each node to identify the best combination of features used to split the node. Currently, supported MIP solvers include cplex, gurobi, lpSolve and a greedy heuristic.  
 
-This project aims to address the gap by providing an optimization-based framework to exploit multivariate splits and enable more expressive, comprehensible and accurate tree models.
+To use the CPLEX solver, licensed CPLEX software and the R package cplexAPI must be installed. 
+To use the Gurobi solver, licensed Gurobi software and the R package gurobi must be installed. 
+The lpSolve package should be automatically installed along with bsnsing. If not, install it by install.packages('lpSolve').
 
-In bsnsing, a mixed integer program (MIP) is solved at each node to identify the optimal combination of features used to split the node. Currently, supported MIP solvers include CPLEX (commercial) and lpSolve (free). 
-
-To use the CPLEX solver, a licensed CPLEX software and the R package cplexAPI must be installed. The lpSolve package should be automatically installed along with bsnsing. If not, install it by install.packages('lpSolve').
 
 ## Install bsnsing from Github
 install.packages('devtools')
@@ -65,4 +64,5 @@ summary(bs[[3]])  # display the third tree
 
 table(pred = predict(bs, iris[test_index, ], type = 'class'), actual = iris[test_index, 'Species']) # Confusion matrix on the test set
 
-
+### Visualize the bsnsing tree
+Use the plot function. 
