@@ -1066,8 +1066,9 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
   temp[[1L]] <- quote(stats::model.frame) # change the function called
   mf <- eval.parent(temp)
   Terms <- attr(mf, "terms")
+  term_labels <- attr(Terms, "term.labels")
+  mfv <- mf[, term_labels, drop = F]  # drop = F means return a data frame (not a vector) when there is one column
   # remove factor variables with only 1 unique value
-  mfv <- mf[, attr(Terms, "term.labels"), drop = F]  # drop = F means return a data frame (not a vector) when there is one column
   factorcol <- sapply(mfv, function(x) is.factor(x))
   factormfv <- mfv[, factorcol, drop = F]
   collevels <- sapply(factormfv, function(x) length(levels(x)))
@@ -1334,6 +1335,7 @@ summary.bsnsing <- function(object = stop("no 'object' arg"), ...) {
                        confusion.matrix = object$confusion.matrix,
                        accuracy = accuracy,
                        y.coding.scheme = object$y.coding.scheme,
+                       ycode = object$ycode,
                        nodes = nodes, call = match.call())
   class(tree.summary) <- "summary.bsnsing"
   return(tree.summary)
@@ -1604,7 +1606,7 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
 #' If the file argument is supplied, this function will invoke the external programs latex, dvips and ps2pdf. If these programs are not available, only the latex code will be generated. If the file argument is left empty, the latex code will be written to the console screen. The latex code utilizes the following  packages: pstricks, pst-node, pst-tree.
 #' @param object an object of class \code{\link{bsnsing}}.
 #' @param file a writable connection or a character string naming the file to write to. If not supplied, the output will be written to the console.
-#' @param class_labels a character vector of two elements for leaf node label (for 0 and 1)
+#' @param class_labels a character vector of two elements for leaf node label (for 0 and 1). If empty, the labels will be read from the bsnsing object.
 #' @param class_colors a character vector of two elements for leaf node color (for 0 and 1)
 #' @param rule_font a string specifying the font size of the split rule at each non-leaf node
 #' @param rule_color a string specifying the color of the split rule and node, e.g., blue, gray, black, etc. For a list of all usable colors, see https://en.wikibooks.org/wiki/LaTeX/Colors
@@ -1618,7 +1620,7 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
 #' plot(bs, file = "/path/to/destination/filename.tex")
 #' @export
 #'
-plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
+plot.bsnsing <- function(object, file = "", class_labels = c(),
                     class_colors = c('red','green'),
                     rule_font = c("footnotesize","scriptsize","tiny","normalsize","small"),
                     rule_color = "blue", footnote = F,
@@ -1628,7 +1630,9 @@ plot.bsnsing <- function(object, file = "", class_labels = c('Neg','Pos'),
   if (!inherits(object, "bsnsing")) stop("Not a legitimate \"bsnsing\" object")
   rule_font <- match.arg(rule_font)
   papersize <- match.arg(papersize)
-  nodes <- (summary(object))$nodes
+  sobj <- summary(object)
+  nodes <- sobj$nodes
+  if(length(class_labels) == 0) class_labels <- sobj$ycode
 
   if(file != ""){
     pathname <- dirname(file)
