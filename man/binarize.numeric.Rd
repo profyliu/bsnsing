@@ -10,7 +10,8 @@ binarize.numeric(
   y,
   target = stop("Must provide a target, 0 or 1"),
   segments = 10,
-  bin.size = 5
+  bin.size = 5,
+  node.size = 10
 )
 }
 \arguments{
@@ -25,6 +26,8 @@ binarize.numeric(
 \item{segments}{a positive integer, any value below 3 is set to 3. It is the maximum number of segments the range of \code{x} is divided into.}
 
 \item{bin.size}{a positive integer. It is the minimum number of observations required to fall into each bin.}
+
+\item{node.size}{a positive integer. If either child node is smaller than the node.size, do not return the perfect rule.}
 }
 \value{
 a data frame with binary (0 and 1) entries, or a character string describing the rule that perfectly splits \code{y}. If a data frame is returned, the column names are indicative of the conditions used to form the corresponding columns.

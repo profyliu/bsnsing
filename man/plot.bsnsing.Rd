@@ -7,7 +7,7 @@
 \method{plot}{bsnsing}(
   object,
   file = "",
-  class_labels = c("Neg", "Pos"),
+  class_labels = c(),
   class_colors = c("red", "green"),
   rule_font = c("footnotesize", "scriptsize", "tiny", "normalsize", "small"),
   rule_color = "blue",
@@ -28,7 +28,7 @@
 
 \item{file}{a writable connection or a character string naming the file to write to. If not supplied, the output will be written to the console.}
 
-\item{class_labels}{a character vector of two elements for leaf node label (for 0 and 1)}
+\item{class_labels}{a character vector of two elements for leaf node label (for 0 and 1). If empty, the labels will be read from the bsnsing object.}
 
 \item{class_colors}{a character vector of two elements for leaf node color (for 0 and 1)}
 

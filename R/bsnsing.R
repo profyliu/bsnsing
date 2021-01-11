@@ -64,6 +64,7 @@ binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), 
   nseg.factor <- control$nseg.factor
   num2factor <- control$num2factor
   bin.size <- control$bin.size
+  node.size <- control$node.size
 
   if (length(unique(y)) == 1) stop("There is only one unqiue value in y")
   if (length(unique(y)) > 2) stop("There are more than two unique values in y")
@@ -86,8 +87,8 @@ binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), 
   if (length(numeric.col.index) > 0){
     # discretize numeric columns
     for (j in numeric.col.index) {
-      nb <- binarize.numeric(x[,j], x.col.names[j], y, target = target, segments = nseg.numeric, bin.size = bin.size)
-      if (is.data.frame(nb)){
+      nb <- binarize.numeric(x[,j], x.col.names[j], y, target = target, segments = nseg.numeric, bin.size = bin.size, node.size = node.size)
+      if (is.data.frame(nb) & ncol(nb) > 0){
         bx <- cbind(bx, nb)
       } else {
         return(nb)
@@ -135,10 +136,11 @@ binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), 
 #' @param target a scalar, valued 0 or 1, indicating the target level of \code{y}.
 #' @param segments a positive integer, any value below 3 is set to 3. It is the maximum number of segments the range of \code{x} is divided into.
 #' @param bin.size a positive integer. It is the minimum number of observations required to fall into each bin.
+#' @param node.size a positive integer. If either child node is smaller than the node.size, do not return the perfect rule.
 #'
 #' @return a data frame with binary (0 and 1) entries, or a character string describing the rule that perfectly splits \code{y}. If a data frame is returned, the column names are indicative of the conditions used to form the corresponding columns.
 #'
-binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0 or 1"), segments = 10, bin.size = 5) {
+binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0 or 1"), segments = 10, bin.size = 5, node.size = 10) {
   if (length(x) != length(y)) stop("length(x) and length(y) do not match")
   n <- length(x)
 
@@ -153,14 +155,19 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
   max.1 <- max(x[y == 1])
   max.0 <- max(x[y == 0])
   if ((min.0 < min.1 & max.0 < min.1) | (min.1 < min.0 & max.1 < min.0)) {
-    # return the perfect partition rule
-    if (min.0 < min.1 & max.0 < min.1) {
-      perfect.rule <- paste(name, ">=", (max.0 + min.1)/2)
+    # check if either child node.size is smaller than the threshold
+    if(min(sum(y==1), sum(y==0)) < node.size){
+      return(data.frame())
     } else {
-      perfect.rule <- paste(name, "<=", (max.1 + min.0)/2)
+      # return the perfect partition rule
+      if (min.0 < min.1 & max.0 < min.1) {
+        perfect.rule <- paste(name, ">=", (max.0 + min.1)/2)
+      } else {
+        perfect.rule <- paste(name, "<=", (max.1 + min.0)/2)
+      }
+      return(perfect.rule)
+      #stop(paste("Response can be perfectly classified by", name, "."))
     }
-    return(perfect.rule)
-    #stop(paste("Response can be perfectly classified by", name, "."))
   }
 
   if(target != 0 & target != 1) stop("Invalid 'target' argument. Must be 0 or 1")
@@ -1131,7 +1138,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
-                            node.size = 20, stop.prob = 0.9,
+                            node.size = 10, stop.prob = 0.99,
                             opt.solver = c('greedy', 'gurobi','lpSolve','cplex'),
                             opt.model = c('gini','error'),
                             greedy.level = 0.9,
