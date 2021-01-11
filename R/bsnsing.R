@@ -88,7 +88,7 @@ binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), 
     # discretize numeric columns
     for (j in numeric.col.index) {
       nb <- binarize.numeric(x[,j], x.col.names[j], y, target = target, segments = nseg.numeric, bin.size = bin.size, node.size = node.size)
-      if (is.data.frame(nb) & ncol(nb) > 0){
+      if (!is.null(nb) && is.data.frame(nb) && ncol(nb) > 0){
         bx <- cbind(bx, nb)
       } else {
         return(nb)
@@ -157,7 +157,7 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
   if ((min.0 < min.1 & max.0 < min.1) | (min.1 < min.0 & max.1 < min.0)) {
     # check if either child node.size is smaller than the threshold
     if(min(sum(y==1), sum(y==0)) < node.size){
-      return(data.frame())
+      return(data.frame(matrix(0L, nrow = n, ncol = 0)))
     } else {
       # return the perfect partition rule
       if (min.0 < min.1 & max.0 < min.1) {
