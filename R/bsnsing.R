@@ -617,8 +617,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     true_neg_indx <- setdiff(1:n, true_pos_indx)
 
     search_tree <- list()
-    last_node_indx <- 1
-    cur_node_indx <- 1
+    last_node_indx <- 0
     # each element in this list is a list having four elements:
     # (1) a vector of indexes of columns in the candidate
     # (2) the objective value v
@@ -633,30 +632,36 @@ bslearn <- function(bx, y, control = bscontrol()) {
       FP <- length(intersect(true_neg_indx, pred_pos_indx))
       FN <- length(intersect(true_pos_indx, pred_neg_indx))
       this_v <- n1*FP + n0*FN - 2*FP*FN
-      pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,j:p])) == 0)
-      pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
-      FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
-      FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
-      Nminus2FPmax <- n0 - 2*FP_max
-      if(Nminus2FPmax >= 0)
-        this_tau <- n1*FP + (n0 - 2*FP)*FN_min
-      else
-        this_tau <- n1*FP + (n0 - 2*FP_max)*FN
-      this_state <- 0
       if(this_v < vbest){
-        vbest <- this_v
+        vbest = this_v
         cols_best <- c(j)
+      }
+      # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
+      a1 <- n0 - 2*FP
+      a2 <- n1 - 2*FN
+      if(!(a1 <=0 & a2 >=0)){
+        pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,j:p])) == 0)
+        pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
+        FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
+        FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
+        if(a1 > 0 & a2 < 0){
+          this_tau <- min(n1*FP + a1*FN_min, n1*FP_max + (n0 - 2*FP_max)*FN)
+        } else if(a1 < 0 & a2 < 0){
+          this_tau <- n1*FP_max + (n0 - 2*FP_max)*FN
+        } else if(a1 > 0 & a2 > 0){
+          this_tau <- n1*FP + a1*FN_min
+        } else this_tau <- init_vbest
       }
       if(this_tau < vbest){
         # save this for further exploration
-        search_tree[[last_node_indx]] <- list(c(j), this_v, this_tau, 1)
         last_node_indx <- last_node_indx + 1
+        search_tree[[last_node_indx]] <- list(c(j), this_v, this_tau, 1)
       }
     }
 
     # iterate through the search_tree
-    while(cur_node_indx < last_node_indx){
-      cur_node <- search_tree[[cur_node_indx]]
+    while(last_node_indx){
+      cur_node <- search_tree[[1]]
       cur_node_selected_cols <- cur_node[[1]]
       cur_node_v <- cur_node[[2]]
       cur_node_tau <- cur_node[[3]]
@@ -695,16 +700,17 @@ bslearn <- function(bx, y, control = bscontrol()) {
               }
               if(this_tau < vbest){
                 # save this for further exploration
-                search_tree[[last_node_indx]] <- list(c(cur_node_selected_cols, j), this_v, this_tau, 1)
                 last_node_indx <- last_node_indx + 1
+                search_tree[[last_node_indx]] <- list(c(cur_node_selected_cols, j), this_v, this_tau, 1)
               }
             }
           }
         }
       }
       # increment
-      cur_node_indx <- cur_node_indx + 1
-      if(verbose) print(c(cur_node_indx, last_node_indx, vbest))
+      search_tree[[1]] <- NULL
+      last_node_indx <- last_node_indx - 1
+      if(verbose) print(c(last_node_indx, vbest))
     }
     n.rules <- length(cols_best)
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
