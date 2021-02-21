@@ -344,6 +344,19 @@ bslearn <- function(bx, y, control = bscontrol()) {
   index1 <- (1:n)[y == 1]
   index0 <- (1:n)[y == 0]
   bxcolnames <- colnames(bx)
+  # if opt.solver is 'hybrid', make a solver selection
+  if(control$opt.solver == 'hybrid'){
+    if (control$opt.model != 'gini'){
+      stop("opt.model must be gini when opt.solver is set to hybrid")
+    }
+    if(n0*n1 > control$n0n1.cap){
+      control$opt.solver = "enum"
+      print(paste0("n0n1 = ", toString(n0*n1), " opt.solver set to enum"))
+    } else {
+      control$opt.solver = "gurobi"
+      print(paste0("n0n1 = ", toString(n0*n1), " opt.solver set to gurobi"))
+    }
+  }
 
   # Build the Optimization model if opt.solver is not "greedy"; otherwise, use the greedy method
   if(!(control$opt.solver %in% c("greedy","enum"))){
@@ -639,6 +652,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
       a1 <- n0 - 2*FP
       a2 <- n1 - 2*FN
+      this_tau <- init_vbest
       if(!(a1 <=0 & a2 >=0)){
         pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,j:p])) == 0)
         pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
@@ -1235,6 +1249,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param opt.solver a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
+#' @param n0n1.cap a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
 #' @examples
@@ -1247,9 +1262,10 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             node.size = 10, stop.prob = 0.99,
-                            opt.solver = c('enum', 'greedy', 'gurobi','lpSolve','cplex'),
-                            opt.model = c('gini','error'),
+                            opt.solver = c('hybrid', 'enum', 'greedy', 'gurobi', 'lpSolve', 'cplex'),
+                            opt.model = c('gini', 'error'),
                             greedy.level = 0.9,
+                            n0n1.cap = 40000,
                             verbose = F) {
   if (bin.size < 1L) {
     warning("The value of 'bin.size' supplied is < 1; the value 1 was used instead")
@@ -1279,11 +1295,14 @@ bscontrol <- function(bin.size = 5,
     warning("The value of 'greedy.level' supplied is not in [0, 1]; the value 0.9 was used instead")
     greedy.level <- 0.9
   }
+  if (n0n1.cap < 1) {
+    warning("The value of 'n0n1.cap' must be a positive integer; the value was set to 1 instead")
+  }
 
   control <- list(bin.size = bin.size, nseg.numeric = nseg.numeric,
        nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
        opt.solver = match.arg(opt.solver),
-       opt.model = match.arg(opt.model), greedy.level = greedy.level, verbose = verbose)
+       opt.model = match.arg(opt.model), greedy.level = greedy.level, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }

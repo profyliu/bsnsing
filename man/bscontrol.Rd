@@ -11,9 +11,10 @@ bscontrol(
   num2factor = 5,
   node.size = 10,
   stop.prob = 0.99,
-  opt.solver = c("greedy", "gurobi", "lpSolve", "cplex"),
+  opt.solver = c("hybrid", "enum", "greedy", "gurobi", "lpSolve", "cplex"),
   opt.model = c("gini", "error"),
   greedy.level = 0.9,
+  n0n1.cap = 40000,
   verbose = F
 )
 }
@@ -30,11 +31,13 @@ bscontrol(
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
-\item{opt.solver}{a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.}
+\item{opt.solver}{a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.}
 
 \item{opt.model}{a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.}
 
 \item{greedy.level}{a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.}
+
+\item{n0n1.cap}{a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.}
 
 \item{verbose}{a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.}
 }

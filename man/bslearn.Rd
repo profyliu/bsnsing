@@ -11,7 +11,7 @@ bslearn(bx, y, control = bscontrol())
 
 \item{y}{an integer vector with binary entries.}
 
-\item{control}{an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'greedy'}} indicating the optimization solver to be used.}
+\item{control}{an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'enum', 'greedy'}} indicating the optimization method or solver to be used.}
 }
 \value{
 a list containing the splitting solution.
