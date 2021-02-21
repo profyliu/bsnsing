@@ -155,10 +155,11 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
   max.1 <- max(x[y == 1])
   max.0 <- max(x[y == 0])
   if ((min.0 < min.1 & max.0 < min.1) | (min.1 < min.0 & max.1 < min.0)) {
+    # empirically, it is better to use the perfect rule even if some child node is smaller than node.size, so the below logic is commented out
     # check if either child node.size is smaller than the threshold
-    if(min(sum(y==1), sum(y==0)) < node.size){
-      return(data.frame(matrix(0L, nrow = n, ncol = 0)))
-    } else {
+    #if(min(sum(y==1), sum(y==0)) < node.size){
+    #  return(data.frame(matrix(0L, nrow = n, ncol = 0)))
+    #} else {
       # return the perfect partition rule
       if (min.0 < min.1 & max.0 < min.1) {
         perfect.rule <- paste(name, ">=", (max.0 + min.1)/2)
@@ -167,7 +168,7 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
       }
       return(perfect.rule)
       #stop(paste("Response can be perfectly classified by", name, "."))
-    }
+    #}
   }
 
   if(target != 0 & target != 1) stop("Invalid 'target' argument. Must be 0 or 1")
@@ -319,7 +320,7 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
 #'
 #' @param bx a data frame with binary (0 and 1) entries.
 #' @param y an integer vector with binary entries.
-#' @param control an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'greedy'}} indicating the optimization solver to be used.
+#' @param control an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'enum', 'greedy'}} indicating the optimization method or solver to be used.
 #'
 #' @return a list containing the splitting solution.
 #' @examples
@@ -345,7 +346,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
   bxcolnames <- colnames(bx)
 
   # Build the Optimization model if opt.solver is not "greedy"; otherwise, use the greedy method
-  if(control$opt.solver != "greedy"){
+  if(!(control$opt.solver %in% c("greedy","enum"))){
     # all variable column names [z1 ... zn | w1 ... wp | zP1zN1 zP1zN2 ... zP1zNn0 zP2zN1 ... zP2zNn0 ... ... zPn1zNn0]
     if(control$opt.model == 'gini'){
       allcolnames <- c(paste0('o',seq(n)), bxcolnames, paste0('t', seq(n0*n1)))
@@ -521,7 +522,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     #confusion.matrix <- table(fitted.values, y)
     n.rules <- sum(solution_zw[(n+1):(n+p)] > 0.99)
     rules <- paste(names(solution_zw[(n+1):(n+p)])[solution_zw[(n+1):(n+p)] > 0.99], collapse = ' | ')
-  } else {
+  } else if(control$opt.solver == 'greedy') {
     if(verbose) cat(paste("Running greedy heuristics ..."))
     if(control$opt.model == 'gini'){
       selected_cols <- c()
@@ -606,7 +607,107 @@ bslearn <- function(bx, y, control = bscontrol()) {
       n.rules <- length(selected_cols)
       rules <- paste(names(bx)[selected_cols], collapse = ' | ')
     }
+  } else if(control$opt.solver == 'enum') {
+    if(verbose) cat(paste("Running implicit enumeration ..."))
+    # implicit enumeration algorithm to find the optimal solution
+    init_vbest <- n0*n1/2
+    vbest <- init_vbest  # initialize the best objective value
+    cols_best <- c()  # saves the selected cols of the vbest
+    true_pos_indx <- which(y==1)
+    true_neg_indx <- setdiff(1:n, true_pos_indx)
 
+    search_tree <- list()
+    last_node_indx <- 1
+    cur_node_indx <- 1
+    # each element in this list is a list having four elements:
+    # (1) a vector of indexes of columns in the candidate
+    # (2) the objective value v
+    # (3) the best possible objective tau
+    # (4) state of this node: 1 active, 2 leaf, 3 pruned
+
+    # Create the root nodes (single-variable rules) and enter them into the list
+    for(j in 1:p){
+      # evaluate v and tau
+      pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,j])) == 0)
+      pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+      FP <- length(intersect(true_neg_indx, pred_pos_indx))
+      FN <- length(intersect(true_pos_indx, pred_neg_indx))
+      this_v <- n1*FP + n0*FN - 2*FP*FN
+      pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,j:p])) == 0)
+      pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
+      FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
+      FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
+      Nminus2FPmax <- n0 - 2*FP_max
+      if(Nminus2FPmax >= 0)
+        this_tau <- n1*FP + (n0 - 2*FP)*FN_min
+      else
+        this_tau <- n1*FP + (n0 - 2*FP_max)*FN
+      this_state <- 0
+      if(this_v < vbest){
+        vbest <- this_v
+        cols_best <- c(j)
+      }
+      if(this_tau < vbest){
+        # save this for further exploration
+        search_tree[[last_node_indx]] <- list(c(j), this_v, this_tau, 1)
+        last_node_indx <- last_node_indx + 1
+      }
+    }
+
+    # iterate through the search_tree
+    while(cur_node_indx < last_node_indx){
+      cur_node <- search_tree[[cur_node_indx]]
+      cur_node_selected_cols <- cur_node[[1]]
+      cur_node_v <- cur_node[[2]]
+      cur_node_tau <- cur_node[[3]]
+      cur_node_state <- cur_node[[4]]
+      if(cur_node_state == 1){
+        # check if this node is still worth exploring, if not, change its state
+        if(cur_node_tau < vbest) {
+          last_col_indx <- cur_node_selected_cols[length(cur_node_selected_cols)]
+          if(last_col_indx < p){
+            cols_to_try = (last_col_indx + 1):p
+            for(j in cols_to_try){
+              pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(cur_node_selected_cols, j)])) == 0)
+              pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+              FP <- length(intersect(true_neg_indx, pred_pos_indx))
+              FN <- length(intersect(true_pos_indx, pred_neg_indx))
+              this_v <- n1*FP + n0*FN - 2*FP*FN
+              if(this_v < vbest){
+                vbest = this_v
+                cols_best <- c(cur_node_selected_cols, j)
+              }
+              # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
+              a1 <- n0 - 2*FP
+              a2 <- n1 - 2*FN
+              if(!(a1 <=0 & a2 >=0)){
+                pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,c(cur_node_selected_cols, j:p)])) == 0)
+                pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
+                FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
+                FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
+                if(a1 > 0 & a2 < 0){
+                  this_tau <- min(n1*FP + a1*FN_min, n1*FP_max + (n0 - 2*FP_max)*FN)
+                } else if(a1 < 0 & a2 < 0){
+                  this_tau <- n1*FP_max + (n0 - 2*FP_max)*FN
+                } else if(a1 > 0 & a2 > 0){
+                  this_tau <- n1*FP + a1*FN_min
+                } else this_tau <- init_vbest
+              }
+              if(this_tau < vbest){
+                # save this for further exploration
+                search_tree[[last_node_indx]] <- list(c(cur_node_selected_cols, j), this_v, this_tau, 1)
+                last_node_indx <- last_node_indx + 1
+              }
+            }
+          }
+        }
+      }
+      # increment
+      cur_node_indx <- cur_node_indx + 1
+      print(c(cur_node_indx, last_node_indx, vbest))
+    }
+    n.rules <- length(cols_best)
+    rules <- paste(names(bx)[cols_best], collapse = ' | ')
   }
   bsol <- list(n.rules = n.rules, rules = rules)
   return(bsol)
@@ -1124,7 +1225,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param num2factor an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.
 #' @param node.size if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages.
+#' @param opt.solver a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
@@ -1139,7 +1240,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             node.size = 10, stop.prob = 0.99,
-                            opt.solver = c('greedy', 'gurobi','lpSolve','cplex'),
+                            opt.solver = c('enum', 'greedy', 'gurobi','lpSolve','cplex'),
                             opt.model = c('gini','error'),
                             greedy.level = 0.9,
                             verbose = F) {
