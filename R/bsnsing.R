@@ -690,11 +690,11 @@ bslearn <- function(bx, y, control = bscontrol()) {
                 pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
                 FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
                 FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
-                if(a1 > 0 & a2 < 0){
+                if(a1 >= 0 & a2 <= 0){
                   this_tau <- min(n1*FP + a1*FN_min, n1*FP_max + (n0 - 2*FP_max)*FN)
-                } else if(a1 < 0 & a2 < 0){
+                } else if(a1 <= 0 & a2 <= 0){
                   this_tau <- n1*FP_max + (n0 - 2*FP_max)*FN
-                } else if(a1 > 0 & a2 > 0){
+                } else if(a1 >= 0 & a2 >= 0){
                   this_tau <- n1*FP + a1*FN_min
                 } else this_tau <- init_vbest
               }
