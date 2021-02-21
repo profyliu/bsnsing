@@ -704,7 +704,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       }
       # increment
       cur_node_indx <- cur_node_indx + 1
-      print(c(cur_node_indx, last_node_indx, vbest))
+      if(verbose) print(c(cur_node_indx, last_node_indx, vbest))
     }
     n.rules <- length(cols_best)
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
