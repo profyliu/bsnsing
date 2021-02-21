@@ -685,6 +685,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
               # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
               a1 <- n0 - 2*FP
               a2 <- n1 - 2*FN
+              this_tau <- init_vbest
               if(!(a1 <=0 & a2 >=0)){
                 pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,c(cur_node_selected_cols, j:p)])) == 0)
                 pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
