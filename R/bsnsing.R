@@ -496,7 +496,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       grbmod <- list(A = slam::simple_triplet_matrix(ri,ci,va),
                      rhs = rhs, sense = csense, grbmodsense = 'min', obj = objcoef, vtype = vtype,
                      lb = lb, ub = ub)
-      grbparams <- list(OutputFlag = 0)
+      grbparams <- list(OutputFlag = 0, TimeLimit=control$solver.timelimit)
       if (verbose) cat(paste("Running Gurobi ... nrow:", length(rhs), "ncol:", length(lb), "nz:", length(ri), "integer:", p, "..."))
       grbtime <- system.time(
         grbsol <- gurobi::gurobi(grbmod, grbparams)
@@ -636,6 +636,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     if(verbose) cat(paste("Running implicit enumeration ..."))
     # implicit enumeration algorithm to find the optimal solution
     # algorithm
+    beg_time <- proc.time()[3]
     init_vbest <- n0*n1/2
     vbest <- init_vbest  # initialize the best objective value
     cols_best <- c()  # saves the selected cols of the vbest
@@ -739,6 +740,12 @@ bslearn <- function(bx, y, control = bscontrol()) {
       rm(search_tree)
       search_tree <- next_level_tree
       last_node_indx <- n_elem_next_level_tree
+      # If time limit is reached, terminate
+      if(proc.time()[3] - beg_time > control$solver.timelimit) {
+        rm(search_tree)
+        last_node_indx <- 0
+        if(verbose) print("Time limit reached. Terminate with the best solution so far.")
+      }
     }
     n.rules <- length(cols_best)
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
@@ -1260,6 +1267,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param node.size if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
 #' @param opt.solver a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
+#' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi' and 'enum' solvers.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
 #' @param n0n1.cap a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.
@@ -1275,7 +1283,8 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             node.size = 10, stop.prob = 0.99,
-                            opt.solver = c('hybrid', 'enum', 'greedy', 'gurobi', 'lpSolve', 'cplex'),
+                            opt.solver = c('greedy', 'enum', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
+                            solver.timelimit = 10,
                             opt.model = c('gini', 'error'),
                             greedy.level = 0.9,
                             n0n1.cap = 40000,
@@ -1315,6 +1324,7 @@ bscontrol <- function(bin.size = 5,
   control <- list(bin.size = bin.size, nseg.numeric = nseg.numeric,
        nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
        opt.solver = match.arg(opt.solver),
+       solver.timelimit = solver.timelimit,
        opt.model = match.arg(opt.model), greedy.level = greedy.level, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
