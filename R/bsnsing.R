@@ -75,9 +75,9 @@ binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), 
   # remove the (Intercept) column if exists
   x[,'(Intercept)'] <- NULL
   x.col.names <- colnames(x)
-  numeric.col.index <- seq(ncol(x))[sapply(x, class) == 'numeric']
+  numeric.col.index <- seq(ncol(x))[sapply(x, class) %in% c('numeric','integer')]
   factor.col.index <- seq(ncol(x))[sapply(x, class) == 'factor' |
-                                     (sapply(x, class) == 'numeric' & sapply(x, function(x) length(unique(x)) <= num2factor))]
+                                     (sapply(x, class) %in% c('numeric','integer') & sapply(x, function(x) length(unique(x)) <= num2factor))]
   binary.col.index <- seq(ncol(x))[apply(x, 2, function(x) all(x %in% 0:1))]
   numeric.col.index <- setdiff(numeric.col.index, binary.col.index)
   factor.col.index <- setdiff(factor.col.index, binary.col.index)
@@ -344,17 +344,54 @@ bslearn <- function(bx, y, control = bscontrol()) {
   index1 <- (1:n)[y == 1]
   index0 <- (1:n)[y == 0]
   bxcolnames <- colnames(bx)
+
+  # parse groups
+  grp <- integer(p)  # vector indicating the group number of each variable
+  var_names <- c()
+  gt_list <- strsplit(bxcolnames, '>')
+  for(i in 1:length(gt_list)){
+    if(length(gt_list[[i]]) == 2){
+      pos_indx <- match(paste0(gt_list[[i]][1], '>'), var_names)
+      if(is.na(pos_indx)){
+        var_names <- c(var_names, paste0(gt_list[[i]][1], '>'))
+        grp[i] <- length(var_names)
+      } else{
+        grp[i] <- pos_indx
+      }
+    }
+  }
+  lt_list <- strsplit(bxcolnames, '<')
+  for(i in 1:length(lt_list)){
+    if(length(lt_list[[i]]) == 2){
+      pos_indx <- match(paste0(lt_list[[i]][1], '<'), var_names)
+      if(is.na(pos_indx)){
+        var_names <- c(var_names, paste0(lt_list[[i]][1], '<'))
+        grp[i] <- length(var_names)
+      } else{
+        grp[i] <- pos_indx
+      }
+    }
+  }
+  # now fill in the group number for the remaining columns, one unique number for each
+  for(i in 1:p){
+    if(grp[i] == 0){
+      grp[i] = max(grp) + 1
+    }
+  }
+  n_grp <- max(grp)  # number of groups, labeled 1,...,n_grp
+  # variables of the same group will not appear in the same rule
+
   # if opt.solver is 'hybrid', make a solver selection
   if(control$opt.solver == 'hybrid'){
     if (control$opt.model != 'gini'){
       stop("opt.model must be gini when opt.solver is set to hybrid")
     }
-    if(n0*n1 > control$n0n1.cap){
+    if(n0*n1 > control$n0n1.cap | n*p > control$n0n1.cap){
       control$opt.solver = "enum"
-      print(paste0("n0n1 = ", toString(n0*n1), " opt.solver set to enum"))
+      print(paste0("n0*n1 = ", toString(n0*n1), " n*p = ", toString(n*p), " opt.solver set to enum"))
     } else {
       control$opt.solver = "gurobi"
-      print(paste0("n0n1 = ", toString(n0*n1), " opt.solver set to gurobi"))
+      print(paste0("n0*n1 = ", toString(n0*n1), " n*p = ", toString(n*p), " opt.solver set to gurobi"))
     }
   }
 
@@ -537,92 +574,68 @@ bslearn <- function(bx, y, control = bscontrol()) {
     rules <- paste(names(solution_zw[(n+1):(n+p)])[solution_zw[(n+1):(n+p)] > 0.99], collapse = ' | ')
   } else if(control$opt.solver == 'greedy') {
     if(verbose) cat(paste("Running greedy heuristics ..."))
-    if(control$opt.model == 'gini'){
-      selected_cols <- c()
-      subset.rows <- 1:n
-      subset.cols <- 1:p
-      true_pos_indx <- which(y==1)
-      true_neg_indx <- setdiff(1:n, true_pos_indx)
-      FP <- rep(0, p)
-      FN <- rep(0, p)
-      best_obj <- n0*n1  # baseline value when gini reduction is 0
-      while (TRUE){
-        FP[1:p] <- 0
-        FN[1:p] <- 0
-        for(j in subset.cols){
-          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, j)])) == 0)
-          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-          FP[j] <- length(intersect(true_neg_indx, pred_pos_indx))
-          FN[j] <- length(intersect(true_pos_indx, pred_neg_indx))
-        }
-        best_j <- 0
-        this_round_best <- best_obj
-        for(j in subset.cols){
-          this_obj <- n1*FP[j] + n0*FN[j] - 2*FP[j]*FN[j]
-          if (this_obj < this_round_best){
-            best_j <- j
-            this_round_best <- this_obj
-          }
-        }
-        if (best_j == 0){
-          break
-        } else {
-          if(this_round_best >= (control$greedy.level)*best_obj) break
-          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
-          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-          if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
-          selected_cols <- c(selected_cols, best_j)
-          subset.cols <- setdiff(subset.cols, best_j)
-          best_obj <- this_round_best
-        }
+    # algorithm
+    init_vbest <- n0*n1/2
+    vbest <- init_vbest  # initialize the best objective value
+    cols_best <- c()  # saves the selected cols of the vbest
+    true_pos_indx <- which(y==1)
+    true_neg_indx <- setdiff(1:n, true_pos_indx)
+    # Create the root nodes (single-variable rules) and enter them into the list
+    for(j in 1:p){
+      # evaluate v and tau
+      pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,j])) == 0)
+      pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+      FP <- length(intersect(true_neg_indx, pred_pos_indx))
+      FN <- length(intersect(true_pos_indx, pred_neg_indx))
+      this_v <- n1*FP + n0*FN - 2*FP*FN
+      if(this_v < vbest){
+        vbest = this_v
+        cols_best <- c(j)
       }
-      n.rules <- length(selected_cols)
-      rules <- paste(names(bx)[selected_cols], collapse = ' | ')
-    } else {
-      selected_cols <- c()
-      subset.rows <- 1:n
-      subset.cols <- 1:p
-      true_pos_indx <- which(y==1)
-      true_neg_indx <- setdiff(1:n, true_pos_indx)
-      TP <- rep(0, p)
-      TN <- rep(0, p)
-      best_accuracy <- 0
-      while (TRUE){
-        TP[1:p] <- 0
-        TN[1:p] <- 0
-        for(j in subset.cols){
-          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, j)])) == 0)
-          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-          TP[j] <- length(intersect(true_pos_indx, pred_pos_indx))
-          TN[j] <- length(intersect(true_neg_indx, pred_neg_indx))
-        }
-        best_j <- 0
-        this_round_best <- best_accuracy
-        for(j in subset.cols){
-          this_accuracy <- TP[j] + TN[j]
-          if (this_accuracy > this_round_best){
-            best_j <- j
-            this_round_best <- this_accuracy
-          }
-        }
-        if (best_j == 0){
-          break
-        } else {
-          if(this_round_best*(control$greedy.level) <= best_accuracy) break
-          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
-          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-          if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
-          selected_cols <- c(selected_cols, best_j)
-          subset.cols <- setdiff(subset.cols, best_j)
-          best_accuracy <- this_round_best
-        }
-      }
-      n.rules <- length(selected_cols)
-      rules <- paste(names(bx)[selected_cols], collapse = ' | ')
     }
+    done <- 0
+    while(!done){
+      cur_node_groups <- grp[cols_best]
+      candidate_cols <- which(!grp %in% cur_node_groups)
+      old_vbest <- vbest
+      for(j in candidate_cols){
+        this_cols <- c(cols_best, j)
+        pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,this_cols])) == 0)
+        pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+        FP <- length(intersect(true_neg_indx, pred_pos_indx))
+        FN <- length(intersect(true_pos_indx, pred_neg_indx))
+        this_v <- n1*FP + n0*FN - 2*FP*FN
+        if(this_v < vbest){
+          vbest = this_v
+          cols_best <- this_cols
+        }
+      }
+      # if improved, continue trying to add more columns; otherwise, try removing columns without deteriorating solution; if can neither add nor delete a column, done.
+      if(vbest >= control$greedy.level*old_vbest){
+        cur_vbest <- vbest
+        for(j in cols_best){
+          this_cols <- setdiff(cols_best, j)
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,this_cols])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          FP <- length(intersect(true_neg_indx, pred_pos_indx))
+          FN <- length(intersect(true_pos_indx, pred_neg_indx))
+          this_v <- n1*FP + n0*FN - 2*FP*FN
+          if(this_v < vbest){
+            vbest = this_v
+            cols_best <- this_cols
+          }
+        }
+        if(vbest == cur_vbest){
+          done <- 1
+        }
+      }
+    }
+    n.rules <- length(cols_best)
+    rules <- paste(names(bx)[cols_best], collapse = ' | ')
   } else if(control$opt.solver == 'enum') {
     if(verbose) cat(paste("Running implicit enumeration ..."))
     # implicit enumeration algorithm to find the optimal solution
+    # algorithm
     init_vbest <- n0*n1/2
     vbest <- init_vbest  # initialize the best objective value
     cols_best <- c()  # saves the selected cols of the vbest
@@ -631,11 +644,6 @@ bslearn <- function(bx, y, control = bscontrol()) {
 
     search_tree <- list()
     last_node_indx <- 0
-    # each element in this list is a list having four elements:
-    # (1) a vector of indexes of columns in the candidate
-    # (2) the objective value v
-    # (3) the best possible objective tau
-    # (4) state of this node: 1 active, 2 leaf, 3 pruned
 
     # Create the root nodes (single-variable rules) and enter them into the list
     for(j in 1:p){
@@ -650,82 +658,87 @@ bslearn <- function(bx, y, control = bscontrol()) {
         cols_best <- c(j)
       }
       # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
-      a1 <- n0 - 2*FP
-      a2 <- n1 - 2*FN
-      this_tau <- init_vbest
-      if(!(a1 <=0 & a2 >=0)){
-        pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,j:p])) == 0)
-        pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
-        FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
-        FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
-        if(a1 > 0 & a2 < 0){
-          this_tau <- min(n1*FP + a1*FN_min, n1*FP_max + (n0 - 2*FP_max)*FN)
-        } else if(a1 < 0 & a2 < 0){
-          this_tau <- n1*FP_max + (n0 - 2*FP_max)*FN
-        } else if(a1 > 0 & a2 > 0){
-          this_tau <- n1*FP + a1*FN_min
-        } else this_tau <- init_vbest
+      FP_too_big <- FP >= n0/2
+      FN_too_small <- FN <= n1/2
+      if(FP_too_big){
+        if(FN_too_small){
+          this_tau <- this_v  # no hope of improvement
+        } else{
+          this_tau <- n0*(n1-FN)
+        }
+      } else{
+        if(FN_too_small){
+          this_tau <- n1*FP
+        } else{
+          this_tau <- 0  # not enough information to derive a useful bound
+        }
       }
       if(this_tau < vbest){
         # save this for further exploration
         last_node_indx <- last_node_indx + 1
-        search_tree[[last_node_indx]] <- list(c(j), this_v, this_tau, 1)
+        search_tree[[last_node_indx]] <- list(c(j), FP, FN, this_tau)
       }
     }
 
-    # iterate through the search_tree
     while(last_node_indx){
-      cur_node <- search_tree[[1]]
-      cur_node_selected_cols <- cur_node[[1]]
-      cur_node_v <- cur_node[[2]]
-      cur_node_tau <- cur_node[[3]]
-      cur_node_state <- cur_node[[4]]
-      if(cur_node_state == 1){
-        # check if this node is still worth exploring, if not, change its state
-        if(cur_node_tau < vbest) {
-          last_col_indx <- cur_node_selected_cols[length(cur_node_selected_cols)]
-          if(last_col_indx < p){
-            cols_to_try = (last_col_indx + 1):p
-            for(j in cols_to_try){
-              pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(cur_node_selected_cols, j)])) == 0)
-              pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-              FP <- length(intersect(true_neg_indx, pred_pos_indx))
-              FN <- length(intersect(true_pos_indx, pred_neg_indx))
-              this_v <- n1*FP + n0*FN - 2*FP*FN
-              if(this_v < vbest){
-                vbest = this_v
-                cols_best <- c(cur_node_selected_cols, j)
-              }
-              # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
-              a1 <- n0 - 2*FP
-              a2 <- n1 - 2*FN
-              this_tau <- init_vbest
-              if(!(a1 <=0 & a2 >=0)){
-                pred_neg_indx_min <- which(rowSums(cbind(rep(0, n), bx[,c(cur_node_selected_cols, j:p)])) == 0)
-                pred_pos_indx_max <- setdiff(1:n, pred_neg_indx_min)
-                FN_min <- length(intersect(true_pos_indx, pred_neg_indx_min))
-                FP_max <- length(intersect(true_neg_indx, pred_pos_indx_max))
-                if(a1 >= 0 & a2 <= 0){
-                  this_tau <- min(n1*FP + a1*FN_min, n1*FP_max + (n0 - 2*FP_max)*FN)
-                } else if(a1 <= 0 & a2 <= 0){
-                  this_tau <- n1*FP_max + (n0 - 2*FP_max)*FN
-                } else if(a1 >= 0 & a2 >= 0){
-                  this_tau <- n1*FP + a1*FN_min
-                } else this_tau <- init_vbest
-              }
-              if(this_tau < vbest){
-                # save this for further exploration
-                last_node_indx <- last_node_indx + 1
-                search_tree[[last_node_indx]] <- list(c(cur_node_selected_cols, j), this_v, this_tau, 1)
-              }
+      next_level_tree <- list()
+      n_elem_next_level_tree <- 0
+      # iterate through the search_tree
+      for(i in 1:last_node_indx){
+        cur_node <- search_tree[[i]]
+        cur_node_selected_cols <- cur_node[[1]]
+        cur_node_FP <- cur_node[[2]]
+        cur_node_FN <- cur_node[[3]]
+        cur_node_tau <- cur_node[[4]]
+        # Evaluate the node only if it is still promising
+        if(cur_node_tau >= vbest){
+          next
+        }
+        # Evaluate each 1-augment candidate of the cur_node
+        # candidate column must not be from the same group as any of the existing columns, and index must go up (to avoid redundant evaluations)
+        cur_node_groups <- grp[cur_node_selected_cols]
+        candidate_cols <- which(!grp %in% cur_node_groups)
+        candidate_cols <- candidate_cols[candidate_cols > cur_node_selected_cols[length(cur_node_selected_cols)]]
+        for(j in candidate_cols){
+          this_cols <- c(cur_node_selected_cols, j)
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,this_cols])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          FP <- length(intersect(true_neg_indx, pred_pos_indx))
+          FN <- length(intersect(true_pos_indx, pred_neg_indx))
+          if(FP == cur_node_FP & FN == cur_node_FN){
+            next
+          }
+          this_v <- n1*FP + n0*FN - 2*FP*FN
+          if(this_v < vbest){
+            vbest = this_v
+            cols_best <- this_cols
+          }
+          FP_too_big <- FP >= n0/2
+          FN_too_small <- FN <= n1/2
+          if(FP_too_big){
+            if(FN_too_small){
+              this_tau <- this_v  # no hope of improvement
+            } else{
+              this_tau <- n0*(n1-FN)
             }
+          } else{
+            if(FN_too_small){
+              this_tau <- n1*FP
+            } else{
+              this_tau <- 0  # not enough information to derive a useful bound
+            }
+          }
+          if(this_tau < vbest){
+            # save this for further exploration
+            n_elem_next_level_tree <- n_elem_next_level_tree + 1
+            next_level_tree[[n_elem_next_level_tree]] <- list(this_cols, FP, FN, this_tau)
+            if(verbose) print(this_cols)
           }
         }
       }
-      # increment
-      search_tree[[1]] <- NULL
-      last_node_indx <- last_node_indx - 1
-      if(verbose) print(c(last_node_indx, vbest))
+      rm(search_tree)
+      search_tree <- next_level_tree
+      last_node_indx <- n_elem_next_level_tree
     }
     n.rules <- length(cols_best)
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
