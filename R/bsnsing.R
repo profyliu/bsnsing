@@ -447,7 +447,16 @@ bslearn <- function(bx, y, control = bscontrol()) {
       ri <- c(ri, (n*p + n + n0*n1) + seq(n0*n1))
       ci <- c(ci, (n + p)+seq(n0*n1))
       va <- c(va, rep(1L, n0*n1))
+      # w1 + ... + wp <= max.rules
+      ri <- c(ri, (n*p + n + n0*n1 + n0*n1) + rep(1, p))
+      ci <- c(ci, n + seq(p))
+      va <- c(va, rep(1L, p))
     }
+    # w1 + ... + wp <= max.rules
+    ri <- c(ri, (n*p + n) + rep(1, p))
+    ci <- c(ci, n + seq(p))
+    va <- c(va, rep(1L, p))
+
 
     # Objective coefficient (not including the constant n0*n1)
     temp <- rep(-n0, n)
@@ -463,13 +472,15 @@ bslearn <- function(bx, y, control = bscontrol()) {
       rhs <- c(rep(0L, n*p),
                rep(0L, n),
                rep(1L, n0*n1),
-               rep(0L, n0*n1))
+               rep(0L, n0*n1),
+               control$max.rules)
 
       # Constraint sense
       csense <- c(rep('<', n*p),
                   rep('>', n),
                   rep('<', n0*n1),
-                  rep('<', n0*n1))
+                  rep('<', n0*n1),
+                  '<')
 
       # Variable types
       vtype <- c(rep('C', n), rep('B', p), rep('C', n0*n1))
@@ -480,10 +491,12 @@ bslearn <- function(bx, y, control = bscontrol()) {
     } else {
       # Right-hand side vector
       rhs <- c(rep(0L, n*p),
-               rep(0L, n))
+               rep(0L, n),
+               control$max.rules)
       # Constraint sense
       csense <- c(rep('<', n*p),
-                  rep('>', n))
+                  rep('>', n),
+                  '<')
       # Variable types
       vtype <- c(rep('C', n), rep('B', p))
       # variable bounds
@@ -508,7 +521,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       # theta_ij + z_i <= 1 for i in P and j in N and theta_ij >= 0 imply z_i <= 1 for i in P
       # But if opt.model == 'error', then need to add z_i <= 1 for i in P
       if(control$opt.model == 'error'){
-        ri <- c(ri, n*p + n + 1:n1)
+        ri <- c(ri, n*p + n + 1 + 1:n1)
         ci <- c(ci, index1)
         va <- c(va, rep(1L, n1))
         rhs <- c(rhs, rep(1L,n1))
@@ -527,7 +540,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       cplex.prob <- cplexAPI::initProbCPLEX(cplex.env)
       cplexAPI::chgProbNameCPLEX(cplex.env, cplex.prob, "bsnsing")
       cplex.nc <- ifelse(control$opt.model == 'gini', n + p + n0*n1, n + p)
-      cplex.nr <- ifelse(control$opt.model == 'gini', n*p + n + 2*n0*n1, n*p + n)
+      cplex.nr <- ifelse(control$opt.model == 'gini', n*p + n + 2*n0*n1 + 1, n*p + n)
       cplex.nz <- length(ri)
       cplex.obj <- objcoef
       cplex.rhs <- rhs
@@ -574,64 +587,89 @@ bslearn <- function(bx, y, control = bscontrol()) {
     rules <- paste(names(solution_zw[(n+1):(n+p)])[solution_zw[(n+1):(n+p)] > 0.99], collapse = ' | ')
   } else if(control$opt.solver == 'greedy') {
     if(verbose) cat(paste("Running greedy heuristics ..."))
-    # algorithm
-    init_vbest <- n0*n1/2
-    vbest <- init_vbest  # initialize the best objective value
-    cols_best <- c()  # saves the selected cols of the vbest
-    true_pos_indx <- which(y==1)
-    true_neg_indx <- setdiff(1:n, true_pos_indx)
-    # Create the root nodes (single-variable rules) and enter them into the list
-    for(j in 1:p){
-      # evaluate v and tau
-      pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,j])) == 0)
-      pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-      FP <- length(intersect(true_neg_indx, pred_pos_indx))
-      FN <- length(intersect(true_pos_indx, pred_neg_indx))
-      this_v <- n1*FP + n0*FN - 2*FP*FN
-      if(this_v < vbest){
-        vbest = this_v
-        cols_best <- c(j)
-      }
-    }
-    done <- 0
-    while(!done){
-      cur_node_groups <- grp[cols_best]
-      candidate_cols <- which(!grp %in% cur_node_groups)
-      old_vbest <- vbest
-      for(j in candidate_cols){
-        this_cols <- c(cols_best, j)
-        pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,this_cols])) == 0)
-        pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-        FP <- length(intersect(true_neg_indx, pred_pos_indx))
-        FN <- length(intersect(true_pos_indx, pred_neg_indx))
-        this_v <- n1*FP + n0*FN - 2*FP*FN
-        if(this_v < vbest){
-          vbest = this_v
-          cols_best <- this_cols
-        }
-      }
-      # if improved, continue trying to add more columns; otherwise, try removing columns without deteriorating solution; if can neither add nor delete a column, done.
-      if(vbest >= control$greedy.level*old_vbest){
-        cur_vbest <- vbest
-        for(j in cols_best){
-          this_cols <- setdiff(cols_best, j)
-          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,this_cols])) == 0)
+    if(control$opt.model == 'gini'){
+      selected_cols <- c()
+      subset.rows <- 1:n
+      subset.cols <- 1:p
+      true_pos_indx <- which(y==1)
+      true_neg_indx <- setdiff(1:n, true_pos_indx)
+      FP <- rep(0, p)
+      FN <- rep(0, p)
+      best_obj <- n0*n1  # baseline value when gini reduction is 0
+      while (TRUE){
+        FP[1:p] <- 0
+        FN[1:p] <- 0
+        for(j in subset.cols){
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, j)])) == 0)
           pred_pos_indx <- setdiff(1:n, pred_neg_indx)
-          FP <- length(intersect(true_neg_indx, pred_pos_indx))
-          FN <- length(intersect(true_pos_indx, pred_neg_indx))
-          this_v <- n1*FP + n0*FN - 2*FP*FN
-          if(this_v < vbest){
-            vbest = this_v
-            cols_best <- this_cols
+          FP[j] <- length(intersect(true_neg_indx, pred_pos_indx))
+          FN[j] <- length(intersect(true_pos_indx, pred_neg_indx))
+        }
+        best_j <- 0
+        this_round_best <- best_obj
+        for(j in subset.cols){
+          this_obj <- n1*FP[j] + n0*FN[j] - 2*FP[j]*FN[j]
+          if (this_obj < this_round_best){
+            best_j <- j
+            this_round_best <- this_obj
           }
         }
-        if(vbest == cur_vbest){
-          done <- 1
+        if (best_j == 0){
+          break
+        } else {
+          if(this_round_best >= (control$greedy.level)*best_obj) break
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
+          selected_cols <- c(selected_cols, best_j)
+          subset.cols <- setdiff(subset.cols, best_j)
+          best_obj <- this_round_best
         }
       }
+      n.rules <- length(selected_cols)
+      rules <- paste(names(bx)[selected_cols], collapse = ' | ')
+    } else {
+      selected_cols <- c()
+      subset.rows <- 1:n
+      subset.cols <- 1:p
+      true_pos_indx <- which(y==1)
+      true_neg_indx <- setdiff(1:n, true_pos_indx)
+      TP <- rep(0, p)
+      TN <- rep(0, p)
+      best_accuracy <- 0
+      while (TRUE){
+        TP[1:p] <- 0
+        TN[1:p] <- 0
+        for(j in subset.cols){
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          TP[j] <- length(intersect(true_pos_indx, pred_pos_indx))
+          TN[j] <- length(intersect(true_neg_indx, pred_neg_indx))
+        }
+        best_j <- 0
+        this_round_best <- best_accuracy
+        for(j in subset.cols){
+          this_accuracy <- TP[j] + TN[j]
+          if (this_accuracy > this_round_best){
+            best_j <- j
+            this_round_best <- this_accuracy
+          }
+        }
+        if (best_j == 0){
+          break
+        } else {
+          if(this_round_best*(control$greedy.level) <= best_accuracy) break
+          pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,c(selected_cols, best_j)])) == 0)
+          pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          if(min(length(pred_neg_indx), length(pred_pos_indx)) < control$node.size) break
+          selected_cols <- c(selected_cols, best_j)
+          subset.cols <- setdiff(subset.cols, best_j)
+          best_accuracy <- this_round_best
+        }
+      }
+      n.rules <- length(selected_cols)
+      rules <- paste(names(bx)[selected_cols], collapse = ' | ')
     }
-    n.rules <- length(cols_best)
-    rules <- paste(names(bx)[cols_best], collapse = ' | ')
   } else if(control$opt.solver == 'enum') {
     if(verbose) cat(paste("Running implicit enumeration ..."))
     # implicit enumeration algorithm to find the optimal solution
@@ -682,6 +720,12 @@ bslearn <- function(bx, y, control = bscontrol()) {
     }
 
     while(last_node_indx){
+      if(length(search_tree[[1]][[1]]) >= control$max.rules){
+        rm(search_tree)
+        last_node_indx <- 0
+        if(verbose) print("max.rules limit is reached. Terminate with the best solution found so far.")
+        break
+      }
       next_level_tree <- list()
       n_elem_next_level_tree <- 0
       # iterate through the search_tree
@@ -744,7 +788,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       if(proc.time()[3] - beg_time > control$solver.timelimit) {
         rm(search_tree)
         last_node_indx <- 0
-        if(verbose) print("Time limit reached. Terminate with the best solution so far.")
+        if(verbose) print("Time limit reached. Terminate with the best solution found so far.")
       }
     }
     n.rules <- length(cols_best)
@@ -1268,6 +1312,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
 #' @param opt.solver a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
 #' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi' and 'enum' solvers.
+#' @param max.rules the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
 #' @param n0n1.cap a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.
@@ -1283,8 +1328,9 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             node.size = 10, stop.prob = 0.99,
-                            opt.solver = c('greedy', 'enum', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
-                            solver.timelimit = 10,
+                            opt.solver = c('enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
+                            solver.timelimit = 180,
+                            max.rules = 3,
                             opt.model = c('gini', 'error'),
                             greedy.level = 0.9,
                             n0n1.cap = 40000,
@@ -1325,6 +1371,7 @@ bscontrol <- function(bin.size = 5,
        nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
        opt.solver = match.arg(opt.solver),
        solver.timelimit = solver.timelimit,
+       max.rules = max.rules,
        opt.model = match.arg(opt.model), greedy.level = greedy.level, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
