@@ -91,7 +91,7 @@ binarize <- function(x, y, target = stop("'target' (0 or 1) must be provided"), 
       if (!is.null(nb) && is.data.frame(nb) && ncol(nb) > 0){
         bx <- cbind(bx, nb)
       } else {
-        return(nb)
+        #return(nb)  This was a bug; should do nothing here.
       }
     }
   }
@@ -1264,7 +1264,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
   # remove factor variables with only 1 unique value
   factorcol <- sapply(mfv, function(x) is.factor(x))
   factormfv <- mfv[, factorcol, drop = F]
-  collevels <- sapply(factormfv, function(x) length(levels(x)))
+  collevels <- sapply(factormfv, function(x) length(unique(x)))
   removecol <- names(collevels[collevels == 1])
   if(length(removecol) > 0) stop(paste("Factor variable", removecol, "has only one unique level. Remove this variable and try again."))
   x <- model.matrix(Terms, data = mf)
