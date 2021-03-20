@@ -451,11 +451,12 @@ bslearn <- function(bx, y, control = bscontrol()) {
       ri <- c(ri, (n*p + n + n0*n1 + n0*n1) + rep(1, p))
       ci <- c(ci, n + seq(p))
       va <- c(va, rep(1L, p))
+    } else{
+      # w1 + ... + wp <= max.rules
+      ri <- c(ri, (n*p + n) + rep(1, p))
+      ci <- c(ci, n + seq(p))
+      va <- c(va, rep(1L, p))
     }
-    # w1 + ... + wp <= max.rules
-    ri <- c(ri, (n*p + n) + rep(1, p))
-    ci <- c(ci, n + seq(p))
-    va <- c(va, rep(1L, p))
 
 
     # Objective coefficient (not including the constant n0*n1)
@@ -509,13 +510,14 @@ bslearn <- function(bx, y, control = bscontrol()) {
       grbmod <- list(A = slam::simple_triplet_matrix(ri,ci,va),
                      rhs = rhs, sense = csense, grbmodsense = 'min', obj = objcoef, vtype = vtype,
                      lb = lb, ub = ub)
-      grbparams <- list(OutputFlag = 0, TimeLimit=control$solver.timelimit)
+      grbparams <- list(OutputFlag = 0, TimeLimit=control$solver.timelimit, MIPGap=0.0)
       if (verbose) cat(paste("Running Gurobi ... nrow:", length(rhs), "ncol:", length(lb), "nz:", length(ri), "integer:", p, "..."))
       grbtime <- system.time(
         grbsol <- gurobi::gurobi(grbmod, grbparams)
       )
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... "))
       solution_zw <- setNames((grbsol$x)[1:(n+p)], allcolnames[1:(n+p)])
+      objval <- n0*n1 + grbsol$objval
     } else if(control$opt.solver == 'lpSolve'){
       # No need to set bounds because all variables in lpSolve are assumed non-negative
       # theta_ij + z_i <= 1 for i in P and j in N and theta_ij >= 0 imply z_i <= 1 for i in P
@@ -534,6 +536,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       )
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
       solution_zw <- setNames((sol$solution)[1:(n+p)], allcolnames[1:(n+p)])
+      objval <- n0*n1 + sol$objval
     } else if(control$opt.solver == 'cplex'){
       # Use cplex
       cplex.env <- cplexAPI::openEnvCPLEX()
@@ -580,6 +583,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       )
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
       solution_zw <- setNames((cplex.sol$x)[1:(n+p)], allcolnames[1:(n+p)])
+      objval <- n0*n1 + cplex.sol$objval
     }
     #fitted.values <- (solution_zw)[1:n]
     #confusion.matrix <- table(fitted.values, y)
@@ -628,6 +632,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       }
       n.rules <- length(selected_cols)
       rules <- paste(names(bx)[selected_cols], collapse = ' | ')
+      objval <- best_obj
     } else {
       selected_cols <- c()
       subset.rows <- 1:n
@@ -669,6 +674,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       }
       n.rules <- length(selected_cols)
       rules <- paste(names(bx)[selected_cols], collapse = ' | ')
+      objval <- best_accuracy
     }
   } else if(control$opt.solver == 'enum') {
     if(verbose) cat(paste("Running implicit enumeration ..."))
@@ -716,6 +722,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
         # save this for further exploration
         last_node_indx <- last_node_indx + 1
         search_tree[[last_node_indx]] <- list(c(j), FP, FN, this_tau)
+        if(verbose) print(j)
       }
     }
 
@@ -793,8 +800,9 @@ bslearn <- function(bx, y, control = bscontrol()) {
     }
     n.rules <- length(cols_best)
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
+    objval <- vbest
   }
-  bsol <- list(n.rules = n.rules, rules = rules)
+  bsol <- list(n.rules = n.rules, rules = rules, objval = objval)
   return(bsol)
 }
 
