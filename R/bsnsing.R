@@ -451,11 +451,27 @@ bslearn <- function(bx, y, control = bscontrol()) {
       ri <- c(ri, (n*p + n + n0*n1 + n0*n1) + rep(1, p))
       ci <- c(ci, n + seq(p))
       va <- c(va, rep(1L, p))
+      # z1 + ... + zn >= node.size
+      ri <- c(ri, (n*p + n + 2*n0*n1 + 1) + rep(1, n))
+      ci <- c(ci, seq(n))
+      va <- c(va, rep(1L, n))
+      # z1 + ... + zn <= n - node.size
+      ri <- c(ri, (n*p + n + 2*n0*n1 + 2) + rep(1, n))
+      ci <- c(ci, seq(n))
+      va <- c(va, rep(1L, n))
     } else{
       # w1 + ... + wp <= max.rules
       ri <- c(ri, (n*p + n) + rep(1, p))
       ci <- c(ci, n + seq(p))
       va <- c(va, rep(1L, p))
+      # z1 + ... + zn >= node.size
+      ri <- c(ri, (n*p + n + 1) + rep(1, n))
+      ci <- c(ci, seq(n))
+      va <- c(va, rep(1L, n))
+      # z1 + ... + zn <= n - node.size
+      ri <- c(ri, (n*p + n + 2) + rep(1, n))
+      ci <- c(ci, seq(n))
+      va <- c(va, rep(1L, n))
     }
 
 
@@ -463,9 +479,9 @@ bslearn <- function(bx, y, control = bscontrol()) {
     temp <- rep(-n0, n)
     temp[index0] <- n1
     if(control$opt.model == 'gini'){
-      objcoef <- c(temp, rep(1e-5,p), rep(-2L, n0*n1))  # 1e-5 is to slightly penalize w
+      objcoef <- c(temp, rep(0,p), rep(-2L, n0*n1))  # Can optionally use 1e-5 is to slightly penalize w
     } else {
-      objcoef <- c(temp, rep(1e-5,p))
+      objcoef <- c(temp, rep(0,p))
     }
 
     if(control$opt.model == 'gini'){
@@ -474,13 +490,17 @@ bslearn <- function(bx, y, control = bscontrol()) {
                rep(0L, n),
                rep(1L, n0*n1),
                rep(0L, n0*n1),
-               control$max.rules)
+               control$max.rules,
+               control$node.size,
+               n - control$node.size)
 
       # Constraint sense
       csense <- c(rep('<', n*p),
                   rep('>', n),
                   rep('<', n0*n1),
                   rep('<', n0*n1),
+                  '<',
+                  '>',
                   '<')
 
       # Variable types
@@ -493,10 +513,14 @@ bslearn <- function(bx, y, control = bscontrol()) {
       # Right-hand side vector
       rhs <- c(rep(0L, n*p),
                rep(0L, n),
-               control$max.rules)
+               control$max.rules,
+               control$node.size,
+               n - control$node.size)
       # Constraint sense
       csense <- c(rep('<', n*p),
                   rep('>', n),
+                  '<',
+                  '>',
                   '<')
       # Variable types
       vtype <- c(rep('C', n), rep('B', p))
@@ -515,9 +539,14 @@ bslearn <- function(bx, y, control = bscontrol()) {
       grbtime <- system.time(
         grbsol <- gurobi::gurobi(grbmod, grbparams)
       )
-      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... "))
-      solution_zw <- setNames((grbsol$x)[1:(n+p)], allcolnames[1:(n+p)])
-      objval <- n0*n1 + grbsol$objval
+      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... Status: ", grbsol$status))
+      if(grbsol$status != 'INFEASIBLE'){  # Status = 3 is infeasible, because of the node.size constraints.
+        solution_zw <- setNames((grbsol$x)[1:(n+p)], allcolnames[1:(n+p)])
+        objval <- n0*n1 + grbsol$objval
+      } else{
+        solution_zw <- rep(0, n+p)
+        objval <- Inf
+      }
     } else if(control$opt.solver == 'lpSolve'){
       # No need to set bounds because all variables in lpSolve are assumed non-negative
       # theta_ij + z_i <= 1 for i in P and j in N and theta_ij >= 0 imply z_i <= 1 for i in P
@@ -534,16 +563,21 @@ bslearn <- function(bx, y, control = bscontrol()) {
         sol <- lpSolve::lp(direction = "min", objective.in = objcoef, dense.const = matrix(c(ri,ci,va), ncol = 3),
                            const.dir = csense, const.rhs = rhs, binary.vec = (n+1):(n+p))
       )
-      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
-      solution_zw <- setNames((sol$solution)[1:(n+p)], allcolnames[1:(n+p)])
-      objval <- n0*n1 + sol$objval
+      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... Status: ", sol$status))
+      if(sol$status != 2){
+        solution_zw <- setNames((sol$solution)[1:(n+p)], allcolnames[1:(n+p)])
+        objval <- n0*n1 + sol$objval
+      } else{
+        solution_zw <- rep(0, n+p)
+        objval <- Inf
+      }
     } else if(control$opt.solver == 'cplex'){
       # Use cplex
       cplex.env <- cplexAPI::openEnvCPLEX()
       cplex.prob <- cplexAPI::initProbCPLEX(cplex.env)
       cplexAPI::chgProbNameCPLEX(cplex.env, cplex.prob, "bsnsing")
       cplex.nc <- ifelse(control$opt.model == 'gini', n + p + n0*n1, n + p)
-      cplex.nr <- ifelse(control$opt.model == 'gini', n*p + n + 2*n0*n1 + 1, n*p + n)
+      cplex.nr <- ifelse(control$opt.model == 'gini', n*p + n + 2*n0*n1 + 3, n*p + n)
       cplex.nz <- length(ri)
       cplex.obj <- objcoef
       cplex.rhs <- rhs
@@ -573,20 +607,27 @@ bslearn <- function(bx, y, control = bscontrol()) {
                             lb = cplex.lb, ub = cplex.ub)
       cplexAPI::copyColTypeCPLEX(cplex.env, cplex.prob, cplex.ctype)
       if (verbose) cat(paste("Running cplex ... nrow:", cplex.nr, "ncol:", cplex.nc, "nz:", cplex.nz, "integer:", p, "..."))
+      cplex.feasible <- T
       lptime <- system.time(
         {
           cplexAPI::mipoptCPLEX(cplex.env, cplex.prob)
-          cplex.sol <- cplexAPI::solutionCPLEX(cplex.env, cplex.prob)
+          try(cplex.sol <- cplexAPI::solutionCPLEX(cplex.env, cplex.prob), silent = T)
           cplexAPI::delProbCPLEX(cplex.env, cplex.prob)
           cplexAPI::closeEnvCPLEX(cplex.env)
         }
       )
-      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... "))
-      solution_zw <- setNames((cplex.sol$x)[1:(n+p)], allcolnames[1:(n+p)])
-      objval <- n0*n1 + cplex.sol$objval
+      if(class(cplex.sol) != 'list'){
+        cplex.sol <- list(lpstat = 103)
+      }
+      if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... Status: ", cplex.sol$lpstat))
+      if(cplex.sol$lpstat != 103){
+        solution_zw <- setNames((cplex.sol$x)[1:(n+p)], allcolnames[1:(n+p)])
+        objval <- n0*n1 + cplex.sol$objval
+      } else{
+        solution_zw <- rep(0, n+p)
+        objval <- Inf
+      }
     }
-    #fitted.values <- (solution_zw)[1:n]
-    #confusion.matrix <- table(fitted.values, y)
     n.rules <- sum(solution_zw[(n+1):(n+p)] > 0.99)
     rules <- paste(names(solution_zw[(n+1):(n+p)])[solution_zw[(n+1):(n+p)] > 0.99], collapse = ' | ')
   } else if(control$opt.solver == 'greedy') {
@@ -695,6 +736,10 @@ bslearn <- function(bx, y, control = bscontrol()) {
       # evaluate v and tau
       pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,j])) == 0)
       pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+      if(length(pred_neg_indx) < control$node.size | length(pred_pos_indx) < control$node.size){
+        if(verbose) print("Minimum node.size reached. Skip.")
+        next
+      }
       FP <- length(intersect(true_neg_indx, pred_pos_indx))
       FN <- length(intersect(true_pos_indx, pred_neg_indx))
       this_v <- n1*FP + n0*FN - 2*FP*FN
@@ -755,6 +800,10 @@ bslearn <- function(bx, y, control = bscontrol()) {
           this_cols <- c(cur_node_selected_cols, j)
           pred_neg_indx <- which(rowSums(cbind(rep(0, n), bx[,this_cols])) == 0)
           pred_pos_indx <- setdiff(1:n, pred_neg_indx)
+          if(length(pred_neg_indx) < control$node.size | length(pred_pos_indx) < control$node.size){
+            if(verbose) print("Minimum node.size reached. Skip.")
+            next
+          }
           FP <- length(intersect(true_neg_indx, pred_pos_indx))
           FN <- length(intersect(true_pos_indx, pred_neg_indx))
           if(FP == cur_node_FP & FN == cur_node_FN){
