@@ -1056,17 +1056,20 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
           print(paste0('Candidate rules from tree::tree: ', paste(tt_rules, collapse = ',')))
         }
       }
+      external_rules <- c(external_rules, ctree_rules, C50_rules, tt_rules)
       # Try rpart::rpart
       if(is.element('rpart', installed.packages()[,1])){
         rp <- rpart::rpart(._.external_y_._ ~., data = external_df)
         rpsplits <- rp$splits
-        rpsplits <- rpsplits[which(rpsplits[,1]>0),]
-        rp_rules <- paste(rownames(rpsplits), rep('<', nrow(rpsplits)), rpsplits[,4])
-        if(verbose){
-          print(paste0('Candidate rules from rpart::rpart: ', paste(rp_rules, collapse = ',')))
+        if(!is.null(rpsplits)){
+          rpsplits <- rpsplits[which(rpsplits[,1]>0),]
+          rp_rules <- paste(rownames(rpsplits), rep('<', nrow(rpsplits)), rpsplits[,4])
+          if(verbose){
+            print(paste0('Candidate rules from rpart::rpart: ', paste(rp_rules, collapse = ',')))
+          }
+          external_rules <- c(external_rules, rp_rules)
         }
       }
-      external_rules <- c(external_rules, ctree_rules, C50_rules, tt_rules, rp_rules)
     }
   }
 
