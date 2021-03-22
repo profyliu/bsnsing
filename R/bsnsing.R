@@ -346,9 +346,11 @@ bslearn <- function(bx, y, control = bscontrol()) {
   bxcolnames <- colnames(bx)
 
   # parse groups
+  bxcolnames_std <- sapply(bxcolnames, function(x) gsub('<=', '<', x))
+  bxcolnames_std <- sapply(bxcolnames_std, function(x) gsub('>=', '>', x))
   grp <- integer(p)  # vector indicating the group number of each variable
   var_names <- c()
-  gt_list <- strsplit(bxcolnames, '>')
+  gt_list <- strsplit(bxcolnames_std, '>')
   for(i in 1:length(gt_list)){
     if(length(gt_list[[i]]) == 2){
       pos_indx <- match(paste0(gt_list[[i]][1], '>'), var_names)
@@ -360,7 +362,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       }
     }
   }
-  lt_list <- strsplit(bxcolnames, '<')
+  lt_list <- strsplit(bxcolnames_std, '<')
   for(i in 1:length(lt_list)){
     if(length(lt_list[[i]]) == 2){
       pos_indx <- match(paste0(lt_list[[i]][1], '<'), var_names)
@@ -984,6 +986,90 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   y.coding.scheme <- ylist$coding.scheme
   ycode <- ylist$ycode
 
+  # import candidate split rules from other packages
+  if(control$import.external){
+    external_df <- cbind(y, x)
+    colnames(external_df)[1] <- '._.external_y_._'  # reset the colname for y
+    external_rules <- c()  # initialize
+    # Try party::ctree
+    if(is.element('party', installed.packages()[,1])){
+      ct <- party::ctree(._.external_y_._ ~., data = external_df)
+      # ctree from the party package
+      ctree_rules <- c()
+      ctree_nodes <- list()
+      ctree_nodes[[1]] <- ct@tree
+      last_ctree_node <- 1
+      while(last_ctree_node){
+        cur_node <- ctree_nodes[[1]]
+        if(cur_node$terminal == F){
+          cur_rule <- cur_node$psplit
+          split_var <- cur_rule$variableName
+          split_point <- cur_rule$splitpoint
+          split_dir <- cur_rule$ordered  # True for <=, False for >
+          ctree_rules <- c(ctree_rules, paste(split_var, ifelse(split_dir, '<=','>'), split_point))
+          # Add child nodes to search tree if they are not terminal
+          cur_node_left <- cur_node$left
+          if(cur_node_left$terminal == F){
+            last_ctree_node <- last_ctree_node + 1
+            ctree_nodes[[last_ctree_node]] <- cur_node_left
+          }
+          cur_node_right <- cur_node$right
+          if(cur_node_right$terminal == F){
+            last_ctree_node <- last_ctree_node + 1
+            ctree_nodes[[last_ctree_node]] <- cur_node_right
+          }
+        }
+        # remove the current node
+        ctree_nodes[[1]] <- NULL
+        last_ctree_node <- last_ctree_node - 1
+      }
+      if(verbose){
+        print(paste0('Candidate rules from party::ctree: ', paste(ctree_rules, collapse = ',')))
+      }
+      # Try C50::C5.0
+      if(is.element('C50', installed.packages()[,1])){
+        external_df$._.external_y_._ <- as.factor(external_df$._.external_y_._)
+        C50 <- C50::C5.0(._.external_y_._ ~., data = external_df)
+        C50tree <- C50$tree  # this is a long string, need to parse it
+        C50parse_vec <- unlist(strsplit(C50tree, split=' '))
+        C50split_vars <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'att')]
+        C50split_cuts <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'cut')]
+        C50split_vars_vec <- sapply(C50split_vars, function(x) substr(x, 6, nchar(x) - 1))
+        C50split_cuts_vec <- sapply(C50split_cuts, function(x) substr(x, 6, 6-2+gregexpr(pattern='\"', substr(x, 6, nchar(x)))[[1]][1]))
+        if(length(C50split_vars_vec) == length(C50split_cuts_vec)){
+          C50_rules <- paste(C50split_vars_vec, rep("<=", length(C50split_vars_vec)), C50split_cuts_vec)
+          if(verbose){
+            print(paste0('Candidate rules from C50::C5.0: ', paste(C50_rules, collapse = ',')))
+          }
+        }
+      }
+      # Try tree::tree
+      if(is.element('tree', installed.packages()[,1])){
+        treetree <- tree::tree(._.external_y_._ ~., data = external_df)
+        treetreeframe <- treetree$frame
+        ttframesplits <- treetreeframe$splits
+        ttframesplit_good_indx <- ttframesplits[,1] !=""
+        tt_cut_vec <- ttframesplits[ttframesplit_good_indx, 1]
+        tt_cut_var <- as.character(treetreeframe[ttframesplit_good_indx, 'var'])
+        tt_rules <- paste(tt_cut_var, tt_cut_vec)
+        if(verbose){
+          print(paste0('Candidate rules from tree::tree: ', paste(tt_rules, collapse = ',')))
+        }
+      }
+      # Try rpart::rpart
+      if(is.element('rpart', installed.packages()[,1])){
+        rp <- rpart::rpart(._.external_y_._ ~., data = external_df)
+        rpsplits <- rp$splits
+        rpsplits <- rpsplits[which(rpsplits[,1]>0),]
+        rp_rules <- paste(rownames(rpsplits), rep('<', nrow(rpsplits)), rpsplits[,4])
+        if(verbose){
+          print(paste0('Candidate rules from rpart::rpart: ', paste(rp_rules, collapse = ',')))
+        }
+      }
+      external_rules <- c(external_rules, ctree_rules, C50_rules, tt_rules, rp_rules)
+    }
+  }
+
   # initialize bookkeeping variables
   nobs <- nrow(x)
   seq.no <- 0  # global unique node number
@@ -1046,6 +1132,13 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
         case <- 5
         if (verbose) cat("Case 5: no meaningful binarization. \n")
       } else {
+        # augment bx using external split rules if available
+        if(control$import.external & length(external_rules)){
+          for(this_external_rule in external_rules){
+            this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
+            bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
+          }
+        }
         if (this$node.split.targe == 1L) {
           bsol <- bslearn(bx, this.y, control = control)
         } else {
@@ -1055,7 +1148,6 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
           this.rule <- ""
           case <- 2
         } else {
-
           left.obs <- with(this.x, this$node.obs[which(eval(parse(text = bsol$rules)))])
           right.obs <- setdiff(this$node.obs, left.obs)
           left.nobs <- length(left.obs)
@@ -1372,6 +1464,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param max.rules the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
+#' @param import.external logical value indicating whether or not to try importing candidate split rules from other decision tree packages. Default is True.
 #' @param n0n1.cap a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
@@ -1387,9 +1480,10 @@ bscontrol <- function(bin.size = 5,
                             node.size = 10, stop.prob = 0.99,
                             opt.solver = c('enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
                             solver.timelimit = 180,
-                            max.rules = 3,
+                            max.rules = 2,
                             opt.model = c('gini', 'error'),
                             greedy.level = 0.9,
+                            import.external = T,
                             n0n1.cap = 40000,
                             verbose = F) {
   if (bin.size < 1L) {
@@ -1429,7 +1523,8 @@ bscontrol <- function(bin.size = 5,
        opt.solver = match.arg(opt.solver),
        solver.timelimit = solver.timelimit,
        max.rules = max.rules,
-       opt.model = match.arg(opt.model), greedy.level = greedy.level, n0n1.cap = n0n1.cap, verbose = verbose)
+       opt.model = match.arg(opt.model), greedy.level = greedy.level,
+       import.external = import.external, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }
