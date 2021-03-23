@@ -381,6 +381,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     }
   }
   n_grp <- max(grp)  # number of groups, labeled 1,...,n_grp
+  neval <- 0  # track the number of objective value evaluations
   # variables of the same group will not appear in the same rule
 
   # if opt.solver is 'hybrid', make a solver selection
@@ -651,6 +652,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
           pred_pos_indx <- setdiff(1:n, pred_neg_indx)
           FP[j] <- length(intersect(true_neg_indx, pred_pos_indx))
           FN[j] <- length(intersect(true_pos_indx, pred_neg_indx))
+          neval <- neval + 1
         }
         best_j <- 0
         this_round_best <- best_obj
@@ -693,6 +695,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
           pred_pos_indx <- setdiff(1:n, pred_neg_indx)
           TP[j] <- length(intersect(true_pos_indx, pred_pos_indx))
           TN[j] <- length(intersect(true_neg_indx, pred_neg_indx))
+          neval <- neval + 1
         }
         best_j <- 0
         this_round_best <- best_accuracy
@@ -745,6 +748,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       FP <- length(intersect(true_neg_indx, pred_pos_indx))
       FN <- length(intersect(true_pos_indx, pred_neg_indx))
       this_v <- n1*FP + n0*FN - 2*FP*FN
+      neval <- neval + 1
       if(this_v < vbest){
         vbest = this_v
         cols_best <- c(j)
@@ -808,6 +812,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
           }
           FP <- length(intersect(true_neg_indx, pred_pos_indx))
           FN <- length(intersect(true_pos_indx, pred_neg_indx))
+          neval <- neval + 1
           if(FP == cur_node_FP & FN == cur_node_FN){
             next
           }
@@ -853,7 +858,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
     objval <- vbest
   }
-  bsol <- list(n.rules = n.rules, rules = rules, objval = objval)
+  bsol <- list(n.rules = n.rules, rules = rules, objval = objval, neval = neval)
   return(bsol)
 }
 
