@@ -9,11 +9,14 @@ bscontrol(
   nseg.numeric = 10,
   nseg.factor = 20,
   num2factor = 5,
-  node.size = 10,
+  node.size = 0,
   stop.prob = 0.99,
-  opt.solver = c("hybrid", "enum", "greedy", "gurobi", "lpSolve", "cplex"),
+  opt.solver = c("enum", "greedy", "hybrid", "gurobi", "lpSolve", "cplex"),
+  solver.timelimit = 180,
+  max.rules = 2,
   opt.model = c("gini", "error"),
   greedy.level = 0.9,
+  import.external = T,
   n0n1.cap = 40000,
   verbose = F
 )
@@ -27,15 +30,21 @@ bscontrol(
 
 \item{num2factor}{an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.}
 
-\item{node.size}{if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.}
+\item{node.size}{if the number of training cases falling into a tree node is fewer than \code{node.size}, the node will become a leaf and no further split will be attempted on it; in addition, do not split a node if either child node that would result from the split contains fewer than \code{node.size} observation. Default is 0, which indicates that the node.size will be set automatically according to this formula: floor(sqrt(Number of training cases)).}
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
 \item{opt.solver}{a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.}
 
+\item{solver.timelimit}{the solver time limit in seconds. Currently only applicable to 'gurobi' and 'enum' solvers.}
+
+\item{max.rules}{the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.}
+
 \item{opt.model}{a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.}
 
 \item{greedy.level}{a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.}
+
+\item{import.external}{logical value indicating whether or not to try importing candidate split rules from other decision tree packages. Default is True.}
 
 \item{n0n1.cap}{a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.}
 

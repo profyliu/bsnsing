@@ -4,7 +4,7 @@
 \alias{plot.bsnsing}
 \title{Generate latex code for plotting the bsnsing tree}
 \usage{
-\method{plot}{bsnsing}(
+plot.bsnsing(
   object,
   file = "",
   class_labels = c(),

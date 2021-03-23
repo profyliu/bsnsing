@@ -919,6 +919,11 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   control <- bscontrol(...)
   if (!missing(controls)) control[names(control)] <- controls
 
+  # if node.size is not set, set it automatically
+  if(control$node.size == 0){
+    control$node.size <- floor(sqrt(nrow(x)))
+  }
+
   verbose <- control$verbose
 
   x <- as.data.frame(x)
@@ -1460,7 +1465,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param nseg.numeric the maximum number of segments the range of a numeric variable is divided into for each inequality direction.
 #' @param nseg.factor the maximum number of unique levels allowed in a factor variable.
 #' @param num2factor an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.
-#' @param node.size if the number of training cases falling into a tree node is less than \code{node.size}, the node will become a leaf and no further split will be attempted on it.
+#' @param node.size if the number of training cases falling into a tree node is fewer than \code{node.size}, the node will become a leaf and no further split will be attempted on it; in addition, do not split a node if either child node that would result from the split contains fewer than \code{node.size} observation. Default is 0, which indicates that the node.size will be set automatically according to this formula: floor(sqrt(Number of training cases)).
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
 #' @param opt.solver a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
 #' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi' and 'enum' solvers.
@@ -1480,7 +1485,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
-                            node.size = 10, stop.prob = 0.99,
+                            node.size = 0, stop.prob = 0.99,
                             opt.solver = c('enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
                             solver.timelimit = 180,
                             max.rules = 2,
@@ -1509,9 +1514,9 @@ bscontrol <- function(bin.size = 5,
     warning("The value of 'stop.prob' supplied is not in [0, 1]; the value 0.97 was used instead")
     stop.prob <- 0.9
   }
-  if (node.size < 1L) {
-    warning("The value of 'node.size' supplied is < 1; the value 3 was used instead")
-    node.size <- 1L
+  if (node.size < 0L) {
+    warning("The value of 'node.size' supplied is < 0; the value 0 was used instead")
+    node.size <- 0L
   }
   if (greedy.level < 0 | greedy.level > 1) {
     warning("The value of 'greedy.level' supplied is not in [0, 1]; the value 0.9 was used instead")
@@ -2026,7 +2031,7 @@ plot.bsnsing <- function(object, file = "", class_labels = c(),
         rt <- trimws(rule_text[k])
         rt <- gsub("<","$<$",rt)
         rt <- gsub(">","$>$",rt)
-        rt <- gsub("%in%", 'in', rt)
+        rt <- gsub("%in%", ' in ', rt)
         rt <- gsub("==", "$=$", rt)
         if(k > 1){
           rule_disp <- paste0(rule_disp, "\\\\ \\texttt{or} ", rt)
@@ -2061,3 +2066,67 @@ plot.bsnsing <- function(object, file = "", class_labels = c(),
   }
 }
 
+
+#' Plot the ROC curve and calculate the AUC
+#'
+#' This is a general utility function, not part of the bsnsing functionality.
+#' @param df a data frame which must contain at least these two columns: the prediction scores (numeric values, not necessarily be between 0 and 1) and the true class labels.
+#' @param label_colnum the column index of the scores column in df
+#' @param score_colnum the column index of the true class labels column in df
+#' @param pos.label a character string matching the positive class label used in the class labels column
+#' @param plot.ROC a logical value indicating whether the ROC curve should be plotted
+#' @param add_on a logical value indicating whether the ROC curve should be added to an existing plot
+#' @param color a character string specifying the color of the ROC curve in the plot
+#' @return the area under the curve (AUC) value
+#' @examples
+#' n <- nrow(BreastCancer)
+#' trainset <- sample(1:n, 0.7*n)  # randomly sample 70\% for training
+#' testset <- setdiff(1:n, trainset)  # the remaining is for testing
+#' # Build a tree to predict Class, using all default options
+#' bs <- bsnsing(Class~., data = BreastCancer[trainset,])
+#' summary(bs)  # display the tree structure
+#' pred <- predict(bs, BreastCancer[testset,], type='class')
+#' actual <- BreastCancer[testset, 'Class']
+#' table(pred, actual)  # display the confusion matrix
+#' # Plot the ROC curve and display the AUC
+#' ROC_func(data.frame(predict(bs, BreastCancer[testset,]),
+#'                     BreastCancer[testset,'Class']), 2, 1,
+#'          pos.label = 'malignant', plot.ROC=T)
+#' # Plot the tree to PDF and generate the .tex file
+#' plot(bs, file='../bsnsing_test/fig/BreastCancer.pdf')
+#' @export
+ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC = F, add_on = F, color = "black"){
+  # Sort by score (high to low)
+  df <- df[order(-df[,score_colnum]),]
+  rownames(df) <- NULL  # Reset the row number to 1,2,3,...
+  n <- nrow(df)
+  # Total # of positive and negative cases in the data set
+  P <- sum(df[,label_colnum] == pos.label)
+  N <- sum(df[,label_colnum] != pos.label)
+
+  # Vectors to hold the coordinates of points on the ROC curve
+  TPR <- c(0,vector(mode="numeric", length=n))
+  FPR <- c(0,vector(mode="numeric", length=n))
+
+  # Calculate the coordinates from one point to the next
+  AUC = 0
+  for(k in 1:n){
+    if(df[k,label_colnum] == pos.label){
+      TPR[k+1] = TPR[k] + 1/P
+      FPR[k+1] = FPR[k]
+    } else{
+      TPR[k+1] = TPR[k]
+      FPR[k+1] = FPR[k] + 1/N
+      AUC = AUC + TPR[k+1]*(1/N)
+    }
+  }
+  if(plot.ROC){
+    # Plot the ROC curve
+    if(add_on){
+      points(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
+    } else{
+      plot(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
+    }
+  }
+  return(AUC)
+}
