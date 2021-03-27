@@ -1125,7 +1125,12 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
 
     this.x <- x[this$node.obs, , drop = F]
     this.y <- y[this$node.obs]
-    bx <- binarize(this.x, this.y, target = this$node.split.target, control = control)
+    if(!control$suppress.internal){
+      bx <- binarize(this.x, this.y, target = this$node.split.target, control = control)
+    } else {
+      bx <- data.frame()
+    }
+
     this.rule <- ""
     nfrac <- 0  # number of fractional solutions from LP
     # 'case' is the flag for different cases:
@@ -1140,11 +1145,21 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
       case <- 1
     } else {
       if (ncol(bx) == 0) {
-        # unable to binarize x, binarize returned an empty data.frame
-        this.rule <- ""
-        case <- 5
-        if (verbose) cat("Case 5: no meaningful binarization. \n")
-      } else {
+        # unable to binarize x (or suppress.internal is True), binarize returned an empty data.frame
+        if(control$import.external & length(external_rules)){
+          bx <- data.frame(placeholder = rep(0, nrow(this.x)))
+          for(this_external_rule in external_rules){
+            this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
+            bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
+          }
+          bx[,1] <- NULL  # remove the placeholder column
+        } else {
+          this.rule <- ""
+          case <- 5
+          if (verbose) cat("Case 5: no meaningful binarization. \n")
+        }
+      }
+      else {
         # augment bx using external split rules if available
         if(control$import.external & length(external_rules)){
           for(this_external_rule in external_rules){
@@ -1152,6 +1167,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
             bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
           }
         }
+      }
+      if(case == 0){
         if (this$node.split.targe == 1L) {
           bsol <- bslearn(bx, this.y, control = control)
         } else {
@@ -1478,6 +1495,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
 #' @param import.external logical value indicating whether or not to try importing candidate split rules from other decision tree packages. Default is True.
+#' @param suppress.internal logical value indicating whether or not to suppress the feature binarization process that creates the pool of binary features. If it is set to True, then only the features imported from external methods (if import.external is True) will be used in the optimal rule selection model. Default is False.
 #' @param n0n1.cap a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
@@ -1497,6 +1515,7 @@ bscontrol <- function(bin.size = 5,
                             opt.model = c('gini', 'error'),
                             greedy.level = 0.9,
                             import.external = T,
+                            suppress.internal = F,
                             n0n1.cap = 40000,
                             verbose = F) {
   if (bin.size < 1L) {
@@ -1537,7 +1556,7 @@ bscontrol <- function(bin.size = 5,
        solver.timelimit = solver.timelimit,
        max.rules = max.rules,
        opt.model = match.arg(opt.model), greedy.level = greedy.level,
-       import.external = import.external, n0n1.cap = n0n1.cap, verbose = verbose)
+       import.external = import.external, suppress.internal = suppress.internal, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }
