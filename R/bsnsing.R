@@ -997,10 +997,10 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   ycode <- ylist$ycode
 
   # import candidate split rules from other packages
+  external_rules <- c()  # initialize
   if(control$import.external){
     external_df <- cbind(y, x)
     colnames(external_df)[1] <- '._.external_y_._'  # reset the colname for y
-    external_rules <- c()  # initialize
     # Try party::ctree
     if(is.element('party', installed.packages()[,1])){
       ct <- party::ctree(._.external_y_._ ~., data = external_df)
