@@ -17,6 +17,8 @@ bscontrol(
   opt.model = c("gini", "error"),
   greedy.level = 0.9,
   import.external = T,
+  suppress.internal = F,
+  no.same.gender.children = F,
   n0n1.cap = 40000,
   verbose = F
 )
@@ -45,6 +47,10 @@ bscontrol(
 \item{greedy.level}{a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.}
 
 \item{import.external}{logical value indicating whether or not to try importing candidate split rules from other decision tree packages. Default is True.}
+
+\item{suppress.internal}{logical value indicating whether or not to suppress the feature binarization process that creates the pool of binary features. If it is set to True, then only the features imported from external methods (if import.external is True) will be used in the optimal rule selection model. Default is False.}
+
+\item{no.same.gender.children}{logical value indicating whether or not to suppress splits that would result in both children having the same majority class. Default is False.}
 
 \item{n0n1.cap}{a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.}
 

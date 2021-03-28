@@ -750,8 +750,20 @@ bslearn <- function(bx, y, control = bscontrol()) {
       this_v <- n1*FP + n0*FN - 2*FP*FN
       neval <- neval + 1
       if(this_v < vbest){
-        vbest = this_v
-        cols_best <- c(j)
+        if(control$no.same.gender.children){
+          # check if the children have different majority classes
+          TP <- n1 - FN
+          TN <- n0 - FP
+          left1prob <- TP/(TP+FP)
+          right1prob <- FN/(FN+TN)
+          if((left1prob > 0.5 & right1prob < 0.5) | (left1prob < 0.5 & right1prob > 0.5)){
+            vbest = this_v
+            cols_best <- this_cols
+          }
+        } else{
+          vbest = this_v
+          cols_best <- this_cols
+        }
       }
       # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
       FP_too_big <- FP >= n0/2
@@ -818,8 +830,20 @@ bslearn <- function(bx, y, control = bscontrol()) {
           }
           this_v <- n1*FP + n0*FN - 2*FP*FN
           if(this_v < vbest){
-            vbest = this_v
-            cols_best <- this_cols
+            if(control$no.same.gender.children){
+              # check if the children have different majority classes
+              TP <- n1 - FN
+              TN <- n0 - FP
+              left1prob <- TP/(TP+FP)
+              right1prob <- FN/(FN+TN)
+              if((left1prob > 0.5 & right1prob < 0.5) | (left1prob < 0.5 & right1prob > 0.5)){
+                vbest = this_v
+                cols_best <- this_cols
+              }
+            } else{
+              vbest = this_v
+              cols_best <- this_cols
+            }
           }
           FP_too_big <- FP >= n0/2
           FN_too_small <- FN <= n1/2
@@ -1496,6 +1520,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
 #' @param import.external logical value indicating whether or not to try importing candidate split rules from other decision tree packages. Default is True.
 #' @param suppress.internal logical value indicating whether or not to suppress the feature binarization process that creates the pool of binary features. If it is set to True, then only the features imported from external methods (if import.external is True) will be used in the optimal rule selection model. Default is False.
+#' @param no.same.gender.children logical value indicating whether or not to suppress splits that would result in both children having the same majority class. Default is False.
 #' @param n0n1.cap a positive integer. It is applicable only when the opt.solver is 'hybrid' and the opt.model is 'gini'. When the bslearn function is called, if the product of the number of negative cases (n0) and the number of positive cases (n1) is greater than this number, 'enum' solver will be used; otherwise, gurobi solver will be used.
 #' @param verbose a logical value (TRUE or FALSE) indicating whether the solution details are to be printed on the screen.
 #' @return An object of class \code{\link{bscontrol}}.
@@ -1516,6 +1541,7 @@ bscontrol <- function(bin.size = 5,
                             greedy.level = 0.9,
                             import.external = T,
                             suppress.internal = F,
+                            no.same.gender.children = F,
                             n0n1.cap = 40000,
                             verbose = F) {
   if (bin.size < 1L) {
@@ -1556,7 +1582,8 @@ bscontrol <- function(bin.size = 5,
        solver.timelimit = solver.timelimit,
        max.rules = max.rules,
        opt.model = match.arg(opt.model), greedy.level = greedy.level,
-       import.external = import.external, suppress.internal = suppress.internal, n0n1.cap = n0n1.cap, verbose = verbose)
+       import.external = import.external, suppress.internal = suppress.internal,
+       no.same.gender.children = no.same.gender.children, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }

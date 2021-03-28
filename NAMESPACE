@@ -2,6 +2,7 @@
 
 S3method(bsnsing,default)
 S3method(bsnsing,formula)
+S3method(plot,bsnsing)
 S3method(predict,bsnsing)
 S3method(predict,mbsnsing)
 S3method(print,bscontrol)
@@ -17,5 +18,4 @@ export(binarize.y)
 export(bscontrol)
 export(bslearn)
 export(bsnsing)
-export(plot.bsnsing)
 exportClasses(mbsnsing)
