@@ -758,11 +758,11 @@ bslearn <- function(bx, y, control = bscontrol()) {
           right1prob <- FN/(FN+TN)
           if((left1prob > 0.5 & right1prob < 0.5) | (left1prob < 0.5 & right1prob > 0.5)){
             vbest = this_v
-            cols_best <- this_cols
+            cols_best <- c(j)
           }
         } else{
           vbest = this_v
-          cols_best <- this_cols
+          cols_best <- c(j)
         }
       }
       # What is the best possible going forward from the current candidate? It depends on the signs of (n0 - 2*FP) and (n1 - 2*FN).
