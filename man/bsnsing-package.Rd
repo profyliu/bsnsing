@@ -28,11 +28,11 @@ Here is a list of internal functions of the package that are open for end users.
 \code{\link{binarize.y}},
 \code{\link{bslearn}},
 \code{\link{bscontrol}}
+\code{\link{plot.bsnsing}}
+\code{\link{ROC_func}}
 }
 
 \section{Future work}{
-
-Visualization functions. Existing tree plotting functions such as \code{\link[rpart]{plot.rpart}} and \code{\link[rpart.plot]{rpart.plot}} restrict the tree structure to have single-variable splits, thus it is not straightforward to adopt these functions for plotting a \code{\link{bsnsing}} object. A dedicated viualization tool should be developed.
 
 Default parameter tuning for out-of-the-box performance. The default parameters in \code{\link{bscontrol}} are currently set quite arbitrarily. Experiments will be performed on a large collection of data sets in order to pinpoint the parameter combination that work well (in terms of training speed, predictive accuracy and interpretability, etc.) under most use cases.
 

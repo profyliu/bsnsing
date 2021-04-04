@@ -16,10 +16,10 @@
 #' \code{\link{binarize.y}},
 #' \code{\link{bslearn}},
 #' \code{\link{bscontrol}}
+#' \code{\link{plot.bsnsing}}
+#' \code{\link{ROC_func}}
 #'
 #' @section Future work:
-#' Visualization functions. Existing tree plotting functions such as \code{\link[rpart]{plot.rpart}} and \code{\link[rpart.plot]{rpart.plot}} restrict the tree structure to have single-variable splits, thus it is not straightforward to adopt these functions for plotting a \code{\link{bsnsing}} object. A dedicated viualization tool should be developed.
-#'
 #' Default parameter tuning for out-of-the-box performance. The default parameters in \code{\link{bscontrol}} are currently set quite arbitrarily. Experiments will be performed on a large collection of data sets in order to pinpoint the parameter combination that work well (in terms of training speed, predictive accuracy and interpretability, etc.) under most use cases.
 #'
 #' Weighting positive and negative cases in imbalanced training sets. If false positive and false negative are given the same weight in a highly imbalanced data set, a null split might be produced in as early as the root node, resulting in a trivial classification, i.e., claiming all cases to fall in the majority class. A weighting scheme should be implemented to ameliorate this situation.
@@ -895,6 +895,9 @@ bslearn <- function(bx, y, control = bscontrol()) {
 #'
 #' @examples
 #' # Use the formula format
+#' bs <- bsnsing(Class~., data = BreastCancer)
+#' summary(bs)
+#' # For multi-class classification
 #' bs <- bsnsing(Species ~ ., data = iris)
 #' summary(bs)
 #' summary(bs[[1]])  # display the tree for the first class
@@ -912,7 +915,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
 #' @export
 bsnsing <- function(x, ...) UseMethod("bsnsing")
 
-#' A class that contains multi-class classification model built by bsnsing
+#' A class that contains multi-class classification model built by bsnsing. Can be used in summary and predict functions.
 #'
 #' @export
 mbsnsing <- setClass('mbsnsing')
@@ -2128,6 +2131,7 @@ plot.bsnsing <- function(object, file = "", class_labels = c(),
 #' @param plot.ROC a logical value indicating whether the ROC curve should be plotted
 #' @param add_on a logical value indicating whether the ROC curve should be added to an existing plot
 #' @param color a character string specifying the color of the ROC curve in the plot
+#' @param lty line type used in the plot (1 solid, 2 dashed, etc.)
 #' @return the area under the curve (AUC) value
 #' @examples
 #' n <- nrow(BreastCancer)
@@ -2146,7 +2150,7 @@ plot.bsnsing <- function(object, file = "", class_labels = c(),
 #' # Plot the tree to PDF and generate the .tex file
 #' plot(bs, file='../bsnsing_test/fig/BreastCancer.pdf')
 #' @export
-ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC = F, add_on = F, color = "black"){
+ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC = F, add_on = F, color = "black", lty = 1){
   # Sort by score (high to low)
   df <- df[order(-df[,score_colnum]),]
   rownames(df) <- NULL  # Reset the row number to 1,2,3,...
@@ -2174,9 +2178,9 @@ ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC =
   if(plot.ROC){
     # Plot the ROC curve
     if(add_on){
-      points(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
+      points(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', lty = lty, col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
     } else{
-      plot(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
+      plot(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', lty = lty, col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
     }
   }
   return(AUC)

@@ -4,7 +4,7 @@
 \name{mbsnsing-class}
 \alias{mbsnsing-class}
 \alias{mbsnsing}
-\title{A class that contains multi-class classification model built by bsnsing}
+\title{A class that contains multi-class classification model built by bsnsing. Can be used in summary and predict functions.}
 \description{
-A class that contains multi-class classification model built by bsnsing
+A class that contains multi-class classification model built by bsnsing. Can be used in summary and predict functions.
 }

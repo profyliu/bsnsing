@@ -11,7 +11,8 @@ ROC_func(
   pos.label = "1",
   plot.ROC = F,
   add_on = F,
-  color = "black"
+  color = "black",
+  lty = 1
 )
 }
 \arguments{
@@ -28,6 +29,8 @@ ROC_func(
 \item{add_on}{a logical value indicating whether the ROC curve should be added to an existing plot}
 
 \item{color}{a character string specifying the color of the ROC curve in the plot}
+
+\item{lty}{line type used in the plot (1 solid, 2 dashed, etc.)}
 }
 \value{
 the area under the curve (AUC) value

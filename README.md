@@ -1,12 +1,16 @@
 # bsnsing
 Learn a Classification Tree using Boolean Sensing
 
-Other tree-building methods, such as ctree and rpart available in R, utilize only a single variable in each split, which limits the expressiveness and in some cases the predictive accuracy of the tree model. 
+Other tree-building methods, such as C50, tree, ctree and rpart available in R, utilize only a single variable in each split, which limits the expressiveness and in some cases the predictive accuracy of the tree model. 
 
-In bsnsing, an optimization problem is solved at each node to identify the best combination of features used to split the node. Currently, supported MIP solvers include cplex, gurobi, lpSolve and a greedy heuristic.  
+In bsnsing, an optimization problem is solved at each node to identify the best combination of features by which to split the node. Currently, supported MIP solvers include cplex, gurobi, lpSolve, an implicit enumeration (ENUM) algorithm and a greedy heuristic.  
+
+The bsnsing package does not depend on them to work out-of-the-box, but
 
 To use the CPLEX solver, licensed CPLEX software and the R package cplexAPI must be installed. 
+
 To use the Gurobi solver, licensed Gurobi software and the R package gurobi must be installed. 
+
 The lpSolve package should be automatically installed along with bsnsing. If not, install it by install.packages('lpSolve').
 
 
@@ -20,7 +24,6 @@ install_github("profyliu/bsnsing")
 library(bsnsing)
 
 ## Usage Examples
-data("GlaucomaMVF", package = "ipred") 
 
 n <- nrow(GlaucomaMVF)
 
@@ -41,11 +44,15 @@ pred <- predict(bs, GlaucomaMVF[test_index, ], type = 'class')
 table(pred, actual = GlaucomaMVF[test_index, 'Class'])
 
 ### Customize parameters
-bs <- bsnsing(Class ~ ., data = GlaucomaMVF, subset = train_index, stop.prob = 0.99)
+bs <- bsnsing(Class ~ ., data = GlaucomaMVF, subset = train_index, opt.model = 'error', opt.solver = 'gurobi')
 
-summary(bs)
+### To learn more about control parameters
 
-table(pred = predict(bs, GlaucomaMVF[test_index, ], type = 'class'), actual = GlaucomaMVF[test_index, 'Class'])
+?bscontrol
+
+### To display the current and default parameter values
+
+bscontrol()
 
 ### Multi-class classification
 n <- nrow(iris)
@@ -60,9 +67,18 @@ bs <- bsnsing(Species ~ ., data = iris, subset = train_index)
 
 summary(bs[[1]])  # display the first tree
 
+summary(bs[[2]])  # display the second tree
+
 summary(bs[[3]])  # display the third tree
 
 table(pred = predict(bs, iris[test_index, ], type = 'class'), actual = iris[test_index, 'Species']) # Confusion matrix on the test set
 
 ### Visualize the bsnsing tree
-Use the plot function. 
+Use the plot function to generate a PDF plot as well as the latex code. For example,
+
+plot(bs)
+
+or
+
+plot(bs, file = 'a.pdf')
+

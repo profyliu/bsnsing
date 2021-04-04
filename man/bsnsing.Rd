@@ -19,6 +19,9 @@ Depending on the arguments provided, either \code{\link[bsnsing]{bsnsing.default
 }
 \examples{
 # Use the formula format
+bs <- bsnsing(Class~., data = BreastCancer)
+summary(bs)
+# For multi-class classification
 bs <- bsnsing(Species ~ ., data = iris)
 summary(bs)
 summary(bs[[1]])  # display the tree for the first class
