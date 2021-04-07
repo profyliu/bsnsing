@@ -15,6 +15,8 @@ The lpSolve package should be automatically installed along with bsnsing. If not
 
 
 ## Install bsnsing from Github
+Windows users need to install Rtools (https://cran.r-project.org/bin/windows/Rtools/) before installing the devtools package. 
+
 install.packages('devtools')
 
 library(devtools)
@@ -22,6 +24,12 @@ library(devtools)
 install_github("profyliu/bsnsing")
 
 library(bsnsing)
+
+## Install bsnsing from source
+Download this repository, and in R run:
+
+install.packages(path_to_file, repos = NULL, type="source")
+
 
 ## Usage Examples
 

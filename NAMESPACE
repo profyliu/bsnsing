@@ -3,6 +3,7 @@
 S3method(bsnsing,default)
 S3method(bsnsing,formula)
 S3method(plot,bsnsing)
+S3method(plot,mbsnsing)
 S3method(predict,bsnsing)
 S3method(predict,mbsnsing)
 S3method(print,bscontrol)
