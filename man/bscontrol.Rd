@@ -11,7 +11,7 @@ bscontrol(
   num2factor = 5,
   node.size = 0,
   stop.prob = 0.99,
-  opt.solver = c("enum", "greedy", "hybrid", "gurobi", "lpSolve", "cplex"),
+  opt.solver = c("enum", "enum_c", "greedy", "hybrid", "gurobi", "lpSolve", "cplex"),
   solver.timelimit = 180,
   max.rules = 2,
   opt.model = c("gini", "error"),
@@ -36,9 +36,9 @@ bscontrol(
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
-\item{opt.solver}{a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.}
+\item{opt.solver}{a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.}
 
-\item{solver.timelimit}{the solver time limit in seconds. Currently only applicable to 'gurobi' and 'enum' solvers.}
+\item{solver.timelimit}{the solver time limit in seconds. Currently only applicable to 'gurobi', 'enum' and 'enum_c' solvers.}
 
 \item{max.rules}{the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.}
 

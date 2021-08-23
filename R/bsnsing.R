@@ -320,7 +320,7 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
 #'
 #' @param bx a data frame with binary (0 and 1) entries.
 #' @param y an integer vector with binary entries.
-#' @param control an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'enum', 'greedy'}} indicating the optimization method or solver to be used.
+#' @param control an object of class \code{bscontrol()}, specifying the algorithmic parameters. The list should contain the following attributes: \emph{opt.model}, a character string in {\code{'gini','error'}} indicating the optimization model to solve, \emph{opt.solver}, a character string in {\code{'gurobi', 'cplex', 'lpSolve', 'enum', 'enum_c', 'greedy'}} indicating the optimization method or solver to be used.
 #'
 #' @return a list containing the splitting solution.
 #' @examples
@@ -399,7 +399,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
   }
 
   # Build the Optimization model if opt.solver is not "greedy"; otherwise, use the greedy method
-  if(!(control$opt.solver %in% c("greedy","enum"))){
+  if(!(control$opt.solver %in% c("greedy","enum","enum_c"))){
     # all variable column names [z1 ... zn | w1 ... wp | zP1zN1 zP1zN2 ... zP1zNn0 zP2zN1 ... zP2zNn0 ... ... zPn1zNn0]
     if(control$opt.model == 'gini'){
       allcolnames <- c(paste0('o',seq(n)), bxcolnames, paste0('t', seq(n0*n1)))
@@ -881,6 +881,40 @@ bslearn <- function(bx, y, control = bscontrol()) {
     n.rules <- length(cols_best)
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
     objval <- vbest
+  } else if(control$opt.solver == 'enum_c') {
+    if(verbose) cat(paste("Running implicit enumeration C program ..."))
+    # Load dynamic library from file
+    this_os_type <- get_os()
+    if(this_os_type == 'windows'){
+      dyloadname <- "bslearn.dll"
+    } else if (this_os_type == 'osx'){
+      dyloadname <- "bslearn.dylib"
+    } else if (this_os_type == 'linux'){
+      dyloadname <- "bslearn.so"
+    }
+    dyn.load(dyloadname)
+    enum_c_res <- .C(getNativeSymbolInfo("bslearn"),
+                     nrows=as.integer(n),
+                     ncols=as.integer(p),
+                     y=as.integer(unlist(y)),
+                     x=as.integer(unlist(bx)),
+                     grp=as.integer(unlist(grp)),
+                     max_rules=as.integer(control$max.rules),
+                     max_time=as.integer(control$solver.timelimit),
+                     node_size=as.integer(control$node.size),
+                     no_same_gender_children=as.integer(control$no.same.gender.children),
+                     verbose=as.integer(verbose),
+                     sol_cols=as.integer(rep(0L,10)), # here 10 is the absolute MAXRULES hardcoded in C
+                     sol_n_cols=as.integer(0),
+                     sol_vbest=as.integer(10000),
+                     neval=as.integer(0)
+                     )
+    n.rules <- enum_c_res[[12]]
+    cols_best <- enum_c_res[[11]][1:n.rules] + 1  # +1 because C array index starts from 0
+    rules <- paste(names(bx)[cols_best], collapse = ' | ')
+    objval <- enum_c_res[[13]]
+    neval <- enum_c_res[[14]]
+    dyn.unload(dyloadname)
   }
   bsol <- list(n.rules = n.rules, rules = rules, objval = objval, neval = neval)
   return(bsol)
@@ -1009,6 +1043,15 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     else {
       control$opt.solver <- 'greedy'
       warning("The cplexAPI is not installed. The opt.solver is set to 'greedy' instead.")
+    }
+  }
+
+  if (tolower(control$opt.solver) == 'enum_c') {
+    if("bslearn.dylib" %in% list.files(path=getwd()) | "bslearn.dll" %in% list.files(path=getwd()))
+      control$opt.solver <- 'enum_c'
+    else {
+      control$opt.solver <- 'greedy'
+      warning("The file bslearn.dylib or bslearn.dll is not found in the working directory. The opt.solver is set to 'greedy' instead. ")
     }
   }
 
@@ -1516,8 +1559,8 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param num2factor an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.
 #' @param node.size if the number of training cases falling into a tree node is fewer than \code{node.size}, the node will become a leaf and no further split will be attempted on it; in addition, do not split a node if either child node that would result from the split contains fewer than \code{node.size} observation. Default is 0, which indicates that the node.size will be set automatically according to this formula: floor(sqrt(Number of training cases)).
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'enum', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, and 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}}. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
-#' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi' and 'enum' solvers.
+#' @param opt.solver a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
+#' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi', 'enum' and 'enum_c' solvers.
 #' @param max.rules the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
 #' @param greedy.level a proportion value between 0 and 1, applicable only when opt.solver is 'greedy'. In the greedy forward selection process of split rules, a candidate rule is added to the OR-clause only if the split performance (gini reduction or accuracy) after the addition multiplied by greedy.level would still be greater than the split performance before the addition. A higher value of greedy.level tend to more aggressively produce multi-variable splits.
@@ -1537,7 +1580,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             node.size = 0, stop.prob = 0.99,
-                            opt.solver = c('enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
+                            opt.solver = c('enum', 'enum_c', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
                             solver.timelimit = 180,
                             max.rules = 2,
                             opt.model = c('gini', 'error'),
@@ -2195,4 +2238,22 @@ ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC =
     }
   }
   return(AUC)
+}
+
+#' Get OS type (windows, osx, linux)
+#' This function is not exposed to bsnsing users.
+get_os <- function(){
+  sysinf <- Sys.info()
+  if (!is.null(sysinf)){
+    os <- sysinf['sysname']
+    if (os == 'Darwin')
+      os <- "osx"
+  } else { ## mystery machine
+    os <- .Platform$OS.type
+    if (grepl("^darwin", R.version$os))
+      os <- "osx"
+    if (grepl("linux-gnu", R.version$os))
+      os <- "linux"
+  }
+  tolower(os)
 }
