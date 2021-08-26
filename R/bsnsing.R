@@ -1000,7 +1000,9 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   # Make sure x has appropriate column names
   x.col.names <- colnames(x)
   for (i in 1:length(x.col.names)) {
-    if(grepl('[<=>^*-+:/[:space:]]', x.col.names[i])) stop(paste("The column", i, "of x, i.e.,", trimws(x.col.names[i]), ", does not have an acceptable name."))
+    if(grepl('[+<=>:/[:space:]*^-]', x.col.names[i])) {
+      stop(paste("The column", i, "of x, i.e.,", trimws(x.col.names[i]), ", has an invalid name."))
+    }
   }
 
   # Impute NA in x
@@ -1050,8 +1052,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     if("bslearn.dylib" %in% list.files(path=getwd()) | "bslearn.dll" %in% list.files(path=getwd()))
       control$opt.solver <- 'enum_c'
     else {
-      control$opt.solver <- 'greedy'
-      warning("The file bslearn.dylib or bslearn.dll is not found in the working directory. The opt.solver is set to 'greedy' instead. ")
+      control$opt.solver <- 'enum'
+      warning("The file bslearn.dylib or bslearn.dll is not found in the working directory. The opt.solver is set to 'enum' instead. ")
     }
   }
 
@@ -1073,43 +1075,55 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     colnames(external_df)[1] <- '._.external_y_._'  # reset the colname for y
     # Try party::ctree
     if(is.element('party', installed.packages()[,1])){
-      ct <- party::ctree(._.external_y_._ ~., data = external_df)
-      # ctree from the party package
-      ctree_rules <- c()
-      ctree_nodes <- list()
-      ctree_nodes[[1]] <- ct@tree
-      last_ctree_node <- 1
-      while(last_ctree_node){
-        cur_node <- ctree_nodes[[1]]
-        if(cur_node$terminal == F){
-          cur_rule <- cur_node$psplit
-          split_var <- cur_rule$variableName
-          split_point <- cur_rule$splitpoint
-          split_dir <- cur_rule$ordered  # True for <=, False for >
-          ctree_rules <- c(ctree_rules, paste(split_var, ifelse(split_dir, '<=','>'), split_point))
-          # Add child nodes to search tree if they are not terminal
-          cur_node_left <- cur_node$left
-          if(cur_node_left$terminal == F){
-            last_ctree_node <- last_ctree_node + 1
-            ctree_nodes[[last_ctree_node]] <- cur_node_left
+      ct <- tryCatch(
+        error = function(cnd) NA,
+        party::ctree(._.external_y_._ ~., data = external_df)
+      )
+      if(class(ct) == "BinaryTree"){
+        # ctree from the party package
+        ctree_rules <- c()
+        ctree_nodes <- list()
+        ctree_nodes[[1]] <- ct@tree
+        last_ctree_node <- 1
+        while(last_ctree_node){
+          cur_node <- ctree_nodes[[1]]
+          if(cur_node$terminal == F){
+            cur_rule <- cur_node$psplit
+            split_var <- cur_rule$variableName
+            split_point <- cur_rule$splitpoint
+            split_dir <- cur_rule$ordered  # True for <=, False for >
+            ctree_rules <- c(ctree_rules, paste(split_var, ifelse(split_dir, '<=','>'), split_point))
+            # Add child nodes to search tree if they are not terminal
+            cur_node_left <- cur_node$left
+            if(cur_node_left$terminal == F){
+              last_ctree_node <- last_ctree_node + 1
+              ctree_nodes[[last_ctree_node]] <- cur_node_left
+            }
+            cur_node_right <- cur_node$right
+            if(cur_node_right$terminal == F){
+              last_ctree_node <- last_ctree_node + 1
+              ctree_nodes[[last_ctree_node]] <- cur_node_right
+            }
           }
-          cur_node_right <- cur_node$right
-          if(cur_node_right$terminal == F){
-            last_ctree_node <- last_ctree_node + 1
-            ctree_nodes[[last_ctree_node]] <- cur_node_right
-          }
+          # remove the current node
+          ctree_nodes[[1]] <- NULL
+          last_ctree_node <- last_ctree_node - 1
         }
-        # remove the current node
-        ctree_nodes[[1]] <- NULL
-        last_ctree_node <- last_ctree_node - 1
+        external_rules <- c(external_rules, ctree_rules)
+        if(verbose){
+          print(paste0('Candidate rules from party::ctree: ', paste(ctree_rules, collapse = ',')))
+        }
       }
-      if(verbose){
-        print(paste0('Candidate rules from party::ctree: ', paste(ctree_rules, collapse = ',')))
-      }
-      # Try C50::C5.0
-      if(is.element('C50', installed.packages()[,1])){
-        external_df$._.external_y_._ <- as.factor(external_df$._.external_y_._)
-        C50 <- C50::C5.0(._.external_y_._ ~., data = external_df)
+
+    }
+    # Try C50::C5.0
+    if(is.element('C50', installed.packages()[,1])){
+      external_df$._.external_y_._ <- as.factor(external_df$._.external_y_._)
+      C50 <- tryCatch(
+        error = function(cnd) NA,
+        C50::C5.0(._.external_y_._ ~., data = external_df)
+      )
+      if(class(C50) == "C5.0"){
         C50tree <- C50$tree  # this is a long string, need to parse it
         C50parse_vec <- unlist(strsplit(C50tree, split=' '))
         C50split_vars <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'att')]
@@ -1121,11 +1135,17 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
           if(verbose){
             print(paste0('Candidate rules from C50::C5.0: ', paste(C50_rules, collapse = ',')))
           }
+          external_rules <- c(external_rules, C50_rules)
         }
       }
-      # Try tree::tree
-      if(is.element('tree', installed.packages()[,1])){
-        treetree <- tree::tree(._.external_y_._ ~., data = external_df)
+    }
+    # Try tree::tree
+    if(is.element('tree', installed.packages()[,1])){
+      treetree <- tryCatch(
+        error = function(cnd) NA,
+        tree::tree(._.external_y_._ ~., data = external_df)
+      )
+      if("tree" %in% class(treetree)){
         treetreeframe <- treetree$frame
         ttframesplits <- treetreeframe$splits
         ttframesplit_good_indx <- ttframesplits[,1] !=""
@@ -1135,11 +1155,16 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
         if(verbose){
           print(paste0('Candidate rules from tree::tree: ', paste(tt_rules, collapse = ',')))
         }
+        external_rules <- c(external_rules, tt_rules)
       }
-      external_rules <- c(external_rules, ctree_rules, C50_rules, tt_rules)
-      # Try rpart::rpart
-      if(is.element('rpart', installed.packages()[,1])){
-        rp <- rpart::rpart(._.external_y_._ ~., data = external_df)
+    }
+    # Try rpart::rpart
+    if(is.element('rpart', installed.packages()[,1])){
+      rp <- tryCatch(
+        error = function(cnd) NA,
+        rpart::rpart(._.external_y_._ ~., data = external_df)
+      )
+      if(class(rp) == "rpart"){
         rpsplits <- rp$splits
         if(!is.null(rpsplits)){
           rpsplits <- rpsplits[which(rpsplits[,1]>0),]
@@ -1580,7 +1605,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 bscontrol <- function(bin.size = 5,
                             nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
                             node.size = 0, stop.prob = 0.99,
-                            opt.solver = c('enum', 'enum_c', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
+                            opt.solver = c('enum_c', 'enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
                             solver.timelimit = 180,
                             max.rules = 2,
                             opt.model = c('gini', 'error'),
@@ -1939,7 +1964,9 @@ predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
   } else {
     if (is.null(object$terms)) {
       # Model is built by bsnsing.default
-      newdata <- ifelse(is.data.frame(newdata), newdata, as.data.frame(newdata))
+      if(!is.data.frame(newdata)){
+        newdata <- as.data.frame(newdata)
+      }
       # ycode <- object$ycode
     } else {
       # Model is built by bsnsing.formula
@@ -2047,12 +2074,12 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
 
   # weight by class prior probability
   for (level in ylevels) {
-    mpred[,level] <- mpred[,level] * yprior[level]
+    mpred[,as.character(level)] <- mpred[,as.character(level)] * ifelse(is.na(yprior[as.character(level)]), 0, yprior[as.character(level)])
   }
   # normalize the class probabilities
   rsum <- base::rowSums(mpred, na.rm = T)
   for (level in ylevels) {
-    mpred[,level] <- ifelse(rsum != 0, mpred[,level]/rsum, 0)
+    mpred[,as.character(level)] <- ifelse(rsum != 0, mpred[,as.character(level)]/rsum, 0)
   }
   if (type == 'prob') {
     return(mpred[, as.character(ylevels)])
