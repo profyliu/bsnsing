@@ -155,11 +155,11 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
   max.1 <- max(x[y == 1])
   max.0 <- max(x[y == 0])
   if ((min.0 < min.1 & max.0 < min.1) | (min.1 < min.0 & max.1 < min.0)) {
-    # empirically, it is better to use the perfect rule even if some child node is smaller than node.size, so the below logic is commented out
+    # enforce the node.size constraint
     # check if either child node.size is smaller than the threshold
-    #if(min(sum(y==1), sum(y==0)) < node.size){
-    #  return(data.frame(matrix(0L, nrow = n, ncol = 0)))
-    #} else {
+    if(min(sum(y==1), sum(y==0)) < node.size){
+      return(data.frame(matrix(0L, nrow = n, ncol = 0)))
+    } else {
       # return the perfect partition rule
       if (min.0 < min.1 & max.0 < min.1) {
         perfect.rule <- paste(name, ">=", (max.0 + min.1)/2)
@@ -168,7 +168,7 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
       }
       return(perfect.rule)
       #stop(paste("Response can be perfectly classified by", name, "."))
-    #}
+    }
   }
 
   if(target != 0 & target != 1) stop("Invalid 'target' argument. Must be 0 or 1")
@@ -222,7 +222,8 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
         cumcnt <- length(ox[ox > keep.cp[length(keep.cp)] & ox < cutpoints.gt[i]])
       }
       if (cumcnt >= bsize) keep.cp <- c(keep.cp, cutpoints.gt[i])
-      if (length(keep.cp) >= (segments - 1)) break
+      # Let the subsampling continue. comment out the next line.
+      # if (length(keep.cp) >= (segments - 1)) break
     }
     keep.cp <- c(keep.cp, cutpoints.gt[ngt])  # always keep the last cutpoints for gt
     cutpoints.gt <- cutpoints.gt[cutpoints.gt %in% keep.cp]
@@ -248,7 +249,8 @@ binarize.numeric <- function(x, name, y, target = stop("Must provide a target, 0
         cumcnt <- length(ox[ox < keep.cp[1] & ox > cutpoints.lt[i]])
       }
       if (cumcnt >= bsize) keep.cp <- c(cutpoints.lt[i], keep.cp)
-      if (length(keep.cp) >= (segments - 1)) break
+      # Let it continue. No break.
+      # if (length(keep.cp) >= (segments - 1)) break
     }
     keep.cp <- c(cutpoints.lt[1], keep.cp)  # always keep the first cutpoints for lt
     cutpoints.lt <- cutpoints.lt[cutpoints.lt %in% keep.cp]
@@ -302,7 +304,9 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
       }
     } else {
       # combine all small level into one group. if there is only one small level, accept it as is
-      for (level in setdiff(unique(x), small.levels)) {
+      #for (level in setdiff(unique(x), small.levels)) {
+      # Keep the small level bucket anyway
+      for (level in unique(x)){
         bx[paste0(name, "=='", level, "'")] <- ifelse(x == level, 1, 0)
       }
       bx[paste0(name, "%in%c(", paste0(paste0("'", small.levels, "'"), collapse = ','), ")")] <- ifelse(x %in% small.levels, 1, 0)
@@ -908,7 +912,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
                      sol_n_cols=as.integer(0),
                      sol_vbest=as.integer(10000),
                      neval=as.integer(0)
-                     )
+    )
     n.rules <- enum_c_res[[12]]
     cols_best <- enum_c_res[[11]][1:n.rules] + 1  # +1 because C array index starts from 0
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
@@ -1069,114 +1073,10 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   ycode <- ylist$ycode
 
   # import candidate split rules from other packages
-  external_rules <- c()  # initialize
-  if(control$import.external){
-    external_df <- cbind(y, x)
-    colnames(external_df)[1] <- '._.external_y_._'  # reset the colname for y
-    # Try party::ctree
-    if(is.element('party', installed.packages()[,1])){
-      ct <- tryCatch(
-        error = function(cnd) NA,
-        party::ctree(._.external_y_._ ~., data = external_df)
-      )
-      if(class(ct) == "BinaryTree"){
-        # ctree from the party package
-        ctree_rules <- c()
-        ctree_nodes <- list()
-        ctree_nodes[[1]] <- ct@tree
-        last_ctree_node <- 1
-        while(last_ctree_node){
-          cur_node <- ctree_nodes[[1]]
-          if(cur_node$terminal == F){
-            cur_rule <- cur_node$psplit
-            split_var <- cur_rule$variableName
-            split_point <- cur_rule$splitpoint
-            split_dir <- cur_rule$ordered  # True for <=, False for >
-            ctree_rules <- c(ctree_rules, paste(split_var, ifelse(split_dir, '<=','>'), split_point))
-            # Add child nodes to search tree if they are not terminal
-            cur_node_left <- cur_node$left
-            if(cur_node_left$terminal == F){
-              last_ctree_node <- last_ctree_node + 1
-              ctree_nodes[[last_ctree_node]] <- cur_node_left
-            }
-            cur_node_right <- cur_node$right
-            if(cur_node_right$terminal == F){
-              last_ctree_node <- last_ctree_node + 1
-              ctree_nodes[[last_ctree_node]] <- cur_node_right
-            }
-          }
-          # remove the current node
-          ctree_nodes[[1]] <- NULL
-          last_ctree_node <- last_ctree_node - 1
-        }
-        external_rules <- c(external_rules, ctree_rules)
-        if(verbose){
-          print(paste0('Candidate rules from party::ctree: ', paste(ctree_rules, collapse = ',')))
-        }
-      }
-
-    }
-    # Try C50::C5.0
-    if(is.element('C50', installed.packages()[,1])){
-      external_df$._.external_y_._ <- as.factor(external_df$._.external_y_._)
-      C50 <- tryCatch(
-        error = function(cnd) NA,
-        C50::C5.0(._.external_y_._ ~., data = external_df)
-      )
-      if(class(C50) == "C5.0"){
-        C50tree <- C50$tree  # this is a long string, need to parse it
-        C50parse_vec <- unlist(strsplit(C50tree, split=' '))
-        C50split_vars <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'att')]
-        C50split_cuts <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'cut')]
-        C50split_vars_vec <- sapply(C50split_vars, function(x) substr(x, 6, nchar(x) - 1))
-        C50split_cuts_vec <- sapply(C50split_cuts, function(x) substr(x, 6, 6-2+gregexpr(pattern='\"', substr(x, 6, nchar(x)))[[1]][1]))
-        if(length(C50split_vars_vec) == length(C50split_cuts_vec)){
-          C50_rules <- paste(C50split_vars_vec, rep("<=", length(C50split_vars_vec)), C50split_cuts_vec)
-          if(verbose){
-            print(paste0('Candidate rules from C50::C5.0: ', paste(C50_rules, collapse = ',')))
-          }
-          external_rules <- c(external_rules, C50_rules)
-        }
-      }
-    }
-    # Try tree::tree
-    if(is.element('tree', installed.packages()[,1])){
-      treetree <- tryCatch(
-        error = function(cnd) NA,
-        tree::tree(._.external_y_._ ~., data = external_df)
-      )
-      if("tree" %in% class(treetree)){
-        treetreeframe <- treetree$frame
-        ttframesplits <- treetreeframe$splits
-        ttframesplit_good_indx <- ttframesplits[,1] !=""
-        tt_cut_vec <- ttframesplits[ttframesplit_good_indx, 1]
-        tt_cut_var <- as.character(treetreeframe[ttframesplit_good_indx, 'var'])
-        tt_rules <- paste(tt_cut_var, tt_cut_vec)
-        if(verbose){
-          print(paste0('Candidate rules from tree::tree: ', paste(tt_rules, collapse = ',')))
-        }
-        external_rules <- c(external_rules, tt_rules)
-      }
-    }
-    # Try rpart::rpart
-    if(is.element('rpart', installed.packages()[,1])){
-      rp <- tryCatch(
-        error = function(cnd) NA,
-        rpart::rpart(._.external_y_._ ~., data = external_df)
-      )
-      if(class(rp) == "rpart"){
-        rpsplits <- rp$splits
-        if(!is.null(rpsplits)){
-          rpsplits <- rpsplits[which(rpsplits[,1]>0),]
-          rp_rules <- paste(rownames(rpsplits), rep('<', nrow(rpsplits)), rpsplits[,4])
-          if(verbose){
-            print(paste0('Candidate rules from rpart::rpart: ', paste(rp_rules, collapse = ',')))
-          }
-          external_rules <- c(external_rules, rp_rules)
-        }
-      }
-    }
-  }
+  # external_rules <- c()  # initialize
+  # if(control$import.external){
+  #   external_rules <- import_external_rules(x,y,verbose)
+  # }
 
   # initialize bookkeeping variables
   nobs <- nrow(x)
@@ -1241,13 +1141,20 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     } else {
       if (ncol(bx) == 0) {
         # unable to binarize x (or suppress.internal is True), binarize returned an empty data.frame
-        if(control$import.external & length(external_rules)){
-          bx <- data.frame(placeholder = rep(0, nrow(this.x)))
-          for(this_external_rule in external_rules){
-            this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
-            bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
+        if(control$import.external){
+          external_rules <- import_external_rules(this.x, this.y, verbose)
+          if(length(external_rules)){
+            bx <- data.frame(placeholder = rep(0, nrow(this.x)))
+            for(this_external_rule in external_rules){
+              this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
+              bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
+            }
+            bx[,1] <- NULL  # remove the placeholder column
+          } else {
+            this.rule <- ""
+            case <- 5
+            if (verbose) cat("Case 5: no meaningful binarization. \n")
           }
-          bx[,1] <- NULL  # remove the placeholder column
         } else {
           this.rule <- ""
           case <- 5
@@ -1256,7 +1163,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
       }
       else {
         # augment bx using external split rules if available
-        if(control$import.external & length(external_rules)){
+        if(control$import.external){
+          external_rules <- import_external_rules(this.x, this.y, verbose)
           for(this_external_rule in external_rules){
             this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
             bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
@@ -1603,18 +1511,18 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #'
 
 bscontrol <- function(bin.size = 5,
-                            nseg.numeric = 10, nseg.factor = 20, num2factor = 5,
-                            node.size = 0, stop.prob = 0.99,
-                            opt.solver = c('enum_c', 'enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
-                            solver.timelimit = 180,
-                            max.rules = 2,
-                            opt.model = c('gini', 'error'),
-                            greedy.level = 0.9,
-                            import.external = T,
-                            suppress.internal = F,
-                            no.same.gender.children = F,
-                            n0n1.cap = 40000,
-                            verbose = F) {
+                      nseg.numeric = 20, nseg.factor = 20, num2factor = 10,
+                      node.size = 0, stop.prob = 0.9999,
+                      opt.solver = c('enum_c', 'enum', 'greedy', 'hybrid', 'gurobi', 'lpSolve', 'cplex'),
+                      solver.timelimit = 180,
+                      max.rules = 2,
+                      opt.model = c('gini', 'error'),
+                      greedy.level = 0.9,
+                      import.external = T,
+                      suppress.internal = F,
+                      no.same.gender.children = F,
+                      n0n1.cap = 40000,
+                      verbose = F) {
   if (bin.size < 1L) {
     warning("The value of 'bin.size' supplied is < 1; the value 1 was used instead")
     bin.size <- 1L
@@ -1648,13 +1556,13 @@ bscontrol <- function(bin.size = 5,
   }
 
   control <- list(bin.size = bin.size, nseg.numeric = nseg.numeric,
-       nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
-       opt.solver = match.arg(opt.solver),
-       solver.timelimit = solver.timelimit,
-       max.rules = max.rules,
-       opt.model = match.arg(opt.model), greedy.level = greedy.level,
-       import.external = import.external, suppress.internal = suppress.internal,
-       no.same.gender.children = no.same.gender.children, n0n1.cap = n0n1.cap, verbose = verbose)
+                  nseg.factor = nseg.factor, num2factor = num2factor, node.size = node.size, stop.prob = stop.prob,
+                  opt.solver = match.arg(opt.solver),
+                  solver.timelimit = solver.timelimit,
+                  max.rules = max.rules,
+                  opt.model = match.arg(opt.model), greedy.level = greedy.level,
+                  import.external = import.external, suppress.internal = suppress.internal,
+                  no.same.gender.children = no.same.gender.children, n0n1.cap = n0n1.cap, verbose = verbose)
   class(control) <- "bscontrol"
   return(control)
 }
@@ -2109,12 +2017,12 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
 #' @export
 #'
 plot.bsnsing <- function(object, file = "", class_labels = c(),
-                    class_colors = c('red','green'),
-                    rule_font = c("footnotesize","scriptsize","tiny","normalsize","small"),
-                    rule_color = "blue", footnote = F,
-                    landscape = F,
-                    papersize = c('a0paper','a1paper','a2paper','a3paper','a4paper','a5paper','a6paper','b0paper','b1paper','b2paper','b3paper','b4paper','b5paper','b6paper','c0paper','c1paper','c2paper','c3paper','c4paper','c5paper','c6paper','b0j','b1j','b2j','b3j','b4j','b5j','b6j','ansiapaper','ansibpaper','ansicpaper','ansidpaper','ansiepaper','letterpaper','executivepaper','legalpaper'),
-                    verbose = F, ...) {
+                         class_colors = c('red','green'),
+                         rule_font = c("footnotesize","scriptsize","tiny","normalsize","small"),
+                         rule_color = "blue", footnote = F,
+                         landscape = F,
+                         papersize = c('a0paper','a1paper','a2paper','a3paper','a4paper','a5paper','a6paper','b0paper','b1paper','b2paper','b3paper','b4paper','b5paper','b6paper','c0paper','c1paper','c2paper','c3paper','c4paper','c5paper','c6paper','b0j','b1j','b2j','b3j','b4j','b5j','b6j','ansiapaper','ansibpaper','ansicpaper','ansidpaper','ansiepaper','letterpaper','executivepaper','legalpaper'),
+                         verbose = F, ...) {
   if (!inherits(object, "bsnsing")) stop("Not a legitimate \"bsnsing\" object")
   print("I am here")
   rule_font <- match.arg(rule_font)
@@ -2283,4 +2191,130 @@ get_os <- function(){
       os <- "linux"
   }
   tolower(os)
+}
+
+
+import_external_rules <- function(x, y, verbose){
+  # import candidate split rules from other packages
+  external_rules <- c()  # initialize
+  external_df <- cbind(y, x)
+  colnames(external_df)[1] <- '._.external_y_._'  # reset the colname for y
+  # Try party::ctree
+  if(is.element('party', installed.packages()[,1])){
+    ct <- tryCatch(
+      error = function(cnd) NA,
+      party::ctree(._.external_y_._ ~., data = external_df, controls = party::ctree_control(maxdepth=2))
+    )
+    if(class(ct) == "BinaryTree"){
+      # ctree from the party package
+      ctree_rules <- c()
+      ctree_nodes <- list()
+      ctree_nodes[[1]] <- ct@tree
+      last_ctree_node <- 1
+      while(last_ctree_node){
+        cur_node <- ctree_nodes[[1]]
+        if(cur_node$terminal == F){
+          cur_rule <- cur_node$psplit
+          split_var <- cur_rule$variableName
+          split_point <- cur_rule$splitpoint
+          split_dir <- cur_rule$ordered  # True for <=, False for >
+          ctree_rules <- c(ctree_rules, paste(split_var, ifelse(split_dir, '<=','>'), split_point))
+          # Add the reverse direction rule
+          ctree_rules <- c(ctree_rules, paste(split_var, ifelse(split_dir, '>','<='), split_point))
+          # Add child nodes to search tree if they are not terminal
+          cur_node_left <- cur_node$left
+          if(cur_node_left$terminal == F){
+            last_ctree_node <- last_ctree_node + 1
+            ctree_nodes[[last_ctree_node]] <- cur_node_left
+          }
+          cur_node_right <- cur_node$right
+          if(cur_node_right$terminal == F){
+            last_ctree_node <- last_ctree_node + 1
+            ctree_nodes[[last_ctree_node]] <- cur_node_right
+          }
+        }
+        # remove the current node
+        ctree_nodes[[1]] <- NULL
+        last_ctree_node <- last_ctree_node - 1
+      }
+      external_rules <- c(external_rules, ctree_rules)
+      if(verbose){
+        print(paste0('Candidate rules from party::ctree: ', paste(ctree_rules, collapse = ',')))
+      }
+    }
+
+  }
+  # Try C50::C5.0
+  if(is.element('C50', installed.packages()[,1])){
+    external_df$._.external_y_._ <- as.factor(external_df$._.external_y_._)
+    C50 <- tryCatch(
+      error = function(cnd) NA,
+      C50::C5.0(._.external_y_._ ~., data = external_df)
+    )
+    if(class(C50) == "C5.0"){
+      C50tree <- C50$tree  # this is a long string, need to parse it
+      C50parse_vec <- unlist(strsplit(C50tree, split=' '))
+      C50split_vars <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'att')]
+      C50split_cuts <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'cut')]
+      C50split_vars_vec <- sapply(C50split_vars, function(x) substr(x, 6, nchar(x) - 1))
+      C50split_cuts_vec <- sapply(C50split_cuts, function(x) substr(x, 6, 6-2+gregexpr(pattern='\"', substr(x, 6, nchar(x)))[[1]][1]))
+      if(length(C50split_vars_vec) == length(C50split_cuts_vec)){
+        C50_rules <- paste(C50split_vars_vec, rep("<=", length(C50split_vars_vec)), C50split_cuts_vec)
+        # Add the reverse direction rules
+        C50_rules_reverse <- paste(C50split_vars_vec, rep("<=", length(C50split_vars_vec)), C50split_cuts_vec)
+        C50_rules <- c(C50_rules, C50_rules_reverse)
+        if(verbose){
+          print(paste0('Candidate rules from C50::C5.0: ', paste(C50_rules, collapse = ',')))
+        }
+        external_rules <- c(external_rules, C50_rules)
+      }
+    }
+  }
+  # Try tree::tree
+  if(is.element('tree', installed.packages()[,1])){
+    treetree <- tryCatch(
+      error = function(cnd) NA,
+      tree::tree(._.external_y_._ ~., data = external_df)
+    )
+    if("tree" %in% class(treetree)){
+      treetreeframe <- treetree$frame
+      ttframesplits <- treetreeframe$splits
+      ttframesplit_good_indx <- ttframesplits[,1] !=""
+      # add cuts in both directions
+      tt_cut_vec_left <- ttframesplits[ttframesplit_good_indx, 1]
+      tt_cut_vec_right <- ttframesplits[ttframesplit_good_indx, 1]
+      tt_cut_var <- as.character(treetreeframe[ttframesplit_good_indx, 'var'])
+      tt_rules_left <- paste(tt_cut_var, tt_cut_vec_left)
+      tt_rules_right <- paste(tt_cut_var, tt_cut_vec_right)
+      tt_rules <- c(tt_rules_left, tt_rules_right)
+      if(verbose){
+        print(paste0('Candidate rules from tree::tree: ', paste(tt_rules, collapse = ',')))
+      }
+      external_rules <- c(external_rules, tt_rules)
+    }
+  }
+  # Try rpart::rpart
+  if(is.element('rpart', installed.packages()[,1])){
+    rp <- tryCatch(
+      error = function(cnd) NA,
+      rpart::rpart(._.external_y_._ ~., data = external_df, control = rpart.control(maxdepth=2))
+    )
+    if(class(rp) == "rpart"){
+      rpsplits <- rp$splits
+      if(!is.null(rpsplits)){
+        rpsplits <- rpsplits[which(rpsplits[,1]>0), ,drop = F]
+        if(nrow(rpsplits) > 0){
+          rp_rules <- paste(rownames(rpsplits), rep('<', nrow(rpsplits)), rpsplits[,4])
+          # Add the reverse dirction rules
+          rp_rules_reverse <- paste(rownames(rpsplits), rep('>=', nrow(rpsplits)), rpsplits[,4])
+          rp_rules <- c(rp_rules, rp_rules_reverse)
+          if(verbose){
+            print(paste0('Candidate rules from rpart::rpart: ', paste(rp_rules, collapse = ',')))
+          }
+          external_rules <- c(external_rules, rp_rules)
+        }
+      }
+    }
+  }
+  return(external_rules)
 }
