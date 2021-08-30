@@ -10,7 +10,7 @@ Developer: Yanchao Liu (yanchaoliu@wayne.edu)
 
 #undef DEBUG 
 #define MAXRULES 10
-#define BLOCKSIZE 1000
+#define BLOCKSIZE 8192
 
 typedef struct candidate_rule {
 	int ncols;
@@ -71,7 +71,7 @@ void bslearn(int *nrows, int *ncols,
 	int *verbose, 
 	int *sol_cols,
 	int *sol_n_cols,
-	int *sol_vbest,
+	double *sol_vbest,
 	int *neval
 ) {
 	int i,j,k;
@@ -104,6 +104,7 @@ void bslearn(int *nrows, int *ncols,
 	}
 	
 	if(*verbose==2) printf("n0 = %d, n1 = %d\n", n0, n1);
+	*neval = 0;
 	double vbest = n0*n1/2.0;
 	int cols_best[MAXRULES];  // to store the column indexes in the best solution 
 	int n_cols_best = 0;  // how many columns are there in the best solution
@@ -185,6 +186,7 @@ void bslearn(int *nrows, int *ncols,
 		printf("vbest: %f n_cols_best: %d\n", vbest, n_cols_best);
 	}
 
+	int memory_ok = 1;
 	while(last_node_indx){
 		if(search_list[0].ncols >= *max_rules){
 			free(search_list);
@@ -284,7 +286,16 @@ void bslearn(int *nrows, int *ncols,
 					n_elem_next_level_list += 1;
 					if(n_elem_next_level_list % BLOCKSIZE == 0){
 						int n_blocks = n_elem_next_level_list / BLOCKSIZE;
-						next_level_list = (rule_t *) realloc(next_level_list, (n_blocks+1)*BLOCKSIZE*sizeof(rule_t));
+						rule_t *bigger_next_level_list = (rule_t *) realloc(next_level_list, (n_blocks+1)*BLOCKSIZE*sizeof(rule_t));
+						if(bigger_next_level_list == NULL){
+							printf("%d: Out of memory, stop early.\n", __LINE__);
+							free(next_level_list);
+							n_elem_next_level_list = 0;
+							memory_ok = 0;
+							break;
+						} else {
+							next_level_list = bigger_next_level_list;
+						}
 					}
 					next_level_list[n_elem_next_level_list-1] = this_rule;
 					if(*verbose){
@@ -296,6 +307,7 @@ void bslearn(int *nrows, int *ncols,
 					}
 				}
 			}
+			if(!memory_ok) break;
 		}
 		free(search_list);
 		search_list = next_level_list;
@@ -311,6 +323,6 @@ void bslearn(int *nrows, int *ncols,
 	for(j = 0; j < n_cols_best; j++){
 		sol_cols[j] = cols_best[j];
 	}
-	*sol_vbest = vbest;
+	sol_vbest[0] = vbest;
 }
 
