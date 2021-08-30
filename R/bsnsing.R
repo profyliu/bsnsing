@@ -340,6 +340,7 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
 
 bslearn <- function(bx, y, control = bscontrol()) {
   if (dim(bx)[1] != length(y)) stop("Dimensions of bx and y do not match.")
+  if (!is.integer(y)) stop("y for bslearn must be integer typed.")
   verbose <- control$verbose
   n <- dim(bx)[1]
   p <- dim(bx)[2]
@@ -896,11 +897,14 @@ bslearn <- function(bx, y, control = bscontrol()) {
     } else if (this_os_type == 'linux'){
       dyloadname <- "bslearn.so"
     }
+    if(is.factor(y)){
+      y <- as.integer(levels(y))[y]
+    }
     dyn.load(dyloadname)
     enum_c_res <- .C(getNativeSymbolInfo("bslearn"),
                      nrows=as.integer(n),
                      ncols=as.integer(p),
-                     y=as.integer(unlist(y)),
+                     y=y,
                      x=as.integer(unlist(bx)),
                      grp=as.integer(unlist(grp)),
                      max_rules=as.integer(control$max.rules),
@@ -910,14 +914,14 @@ bslearn <- function(bx, y, control = bscontrol()) {
                      verbose=as.integer(verbose),
                      sol_cols=as.integer(rep(0L,10)), # here 10 is the absolute MAXRULES hardcoded in C
                      sol_n_cols=as.integer(0),
-                     sol_vbest=as.integer(10000),
+                     sol_vbest=as.numeric(0),
                      neval=as.integer(0)
     )
-    n.rules <- enum_c_res[[12]]
-    cols_best <- enum_c_res[[11]][1:n.rules] + 1  # +1 because C array index starts from 0
+    n.rules <- enum_c_res$sol_n_cols
+    cols_best <- (enum_c_res$sol_cols)[1:n.rules] + 1  # +1 because C array index starts from 0
     rules <- paste(names(bx)[cols_best], collapse = ' | ')
-    objval <- enum_c_res[[13]]
-    neval <- enum_c_res[[14]]
+    objval <- enum_c_res$sol_vbest
+    neval <- enum_c_res$neval
     dyn.unload(dyloadname)
   }
   bsol <- list(n.rules = n.rules, rules = rules, objval = objval, neval = neval)
@@ -1175,7 +1179,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
         if (this$node.split.targe == 1L) {
           bsol <- bslearn(bx, this.y, control = control)
         } else {
-          bsol <- bslearn(bx, 1 - this.y, control = control)
+          # bug fixed: 1 - this.y will change the class of y from integer to numeric; must use 1L - this.y
+          bsol <- bslearn(bx, 1L - this.y, control = control)
         }
         if (bsol$n.rules == 0) {
           this.rule <- ""
