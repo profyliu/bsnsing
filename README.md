@@ -30,6 +30,28 @@ Download this repository, and in R run:
 
 install.packages(path_to_file, repos = NULL, type="source")
 
+## Build the bslearn.so / bslearn.dylib / bslearn.dll
+On windows: 
+
+C:\rtools40\mingw64\bin\gcc -I"C:\Program Files\R\R-4.1.2\include" -fpic -c "C:\...\bsnsing\C\bslearn.c"
+
+C:\rtools40\mingw64\bin\gcc -I"C:\Program Files\R\R-4.1.2\include" -shared bslearn.o -o bslearn.dll
+
+On Mac:
+
+Go to the bsnsing/C folder, modify include path in the Makefile and run
+
+make
+
+to generate the bslearn.dylib file.
+On Linux:
+
+Follow a similar procedure as on Mac, to generate the bslearn.so file.
+
+Finally, copy & paste the dynamic library file (bslearn.dll on Windows, bslearn.dylib on Mac or bslearn.so on Linux) to the working directory of R in which bsnsing is run.
+
+Note that the dynamic library file is not required to run bsnsing, but having it can boost bsnsing's speed by up to two orders of magnitude. 
+
 
 ## Usage Examples
 
