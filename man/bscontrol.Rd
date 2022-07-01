@@ -6,12 +6,12 @@
 \usage{
 bscontrol(
   bin.size = 5,
-  nseg.numeric = 10,
+  nseg.numeric = 20,
   nseg.factor = 20,
-  num2factor = 5,
+  num2factor = 10,
   node.size = 0,
-  stop.prob = 0.99,
-  opt.solver = c("enum", "enum_c", "greedy", "hybrid", "gurobi", "lpSolve", "cplex"),
+  stop.prob = 0.9999,
+  opt.solver = c("enum_c", "enum", "greedy", "hybrid", "gurobi", "lpSolve", "cplex"),
   solver.timelimit = 180,
   max.rules = 2,
   opt.model = c("gini", "error"),
