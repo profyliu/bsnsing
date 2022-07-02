@@ -106,9 +106,9 @@ table(pred = predict(bs, iris[test_index, ], type = 'class'), actual = iris[test
 ### Visualize the bsnsing tree
 Use the plot function to generate a PDF plot as well as the latex code. For example,
 
-plot(bs)
+show(bs)
 
 or
 
-plot(bs, file = 'a.pdf')
+show(bs, file = 'a.pdf')
 
