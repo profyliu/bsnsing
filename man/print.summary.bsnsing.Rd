@@ -4,10 +4,14 @@
 \alias{print.summary.bsnsing}
 \title{Print the Summary of \code{\link{bsnsing}} Model}
 \usage{
-\method{print}{summary.bsnsing}(object, print.call = T, ...)
+\method{print}{summary.bsnsing}(x, print.call = T, ...)
 }
 \arguments{
-\item{object}{an object of class \code{\link{summary.bsnsing}}.}
+\item{x}{an object of class \code{\link{summary.bsnsing}}.}
+
+\item{print.call}{a logical value, print out the function called if TRUE.}
+
+\item{...}{further arguments.}
 }
 \description{
 Print the Summary of \code{\link{bsnsing}} Model

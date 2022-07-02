@@ -4,10 +4,12 @@
 \alias{print.summary.mbsnsing}
 \title{Print the summary of \code{\link{mbsnsing}} model fits}
 \usage{
-\method{print}{summary.mbsnsing}(object, ...)
+\method{print}{summary.mbsnsing}(x, ...)
 }
 \arguments{
-\item{object}{an object of class \code{\link{summary.mbsnsing}}.}
+\item{x}{an object of class \code{\link{summary.mbsnsing}}.}
+
+\item{...}{further arguments.}
 }
 \description{
 Print the summary of \code{\link{mbsnsing}} model fits

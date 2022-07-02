@@ -1,14 +1,14 @@
 Package: bsnsing
 Type: Package
-Title: bsnsing: A decision tree induction method based on recursive optimal boolean rule composition
+Title: Bsnsing: A Decision Tree Induction Method Based on Recursive Optimal Boolean Rule Composition
 Version: 1.0.1
 Author: Yanchao Liu
 Maintainer: Yanchao Liu <yanchaoliu@wayne.edu>
-Description: The bsnsing package provides functions for training a decision tree classifier, making predictions and generating latex code for plotting. It solves the two-class and multi-class classification problems under the supervised learning paradigm. While building a decision tree, bsnsing uses a Boolean rule involving multiple variables to split a node. Each split rule is identified by solving an optimization problem. Use the bsnsing() function to build a tree, the predict() function to make predictions and the show() function to plot the tree. The paper is at <arXiv.2205.15263>. Source code and more data sets are at <https://github.com/profyliu/bsnsing>   
+Description: The bsnsing package provides functions for training a decision tree classifier, making predictions and generating latex code for plotting. It solves the two-class and multi-class classification problems under the supervised learning paradigm. While building a decision tree, bsnsing uses a Boolean rule involving multiple variables to split a node. Each split rule is identified by solving an optimization problem. Use the bsnsing function to build a tree, the predict function to make predictions and the show function to plot the tree. The paper is at <arXiv:2205.15263>. Source code and more data sets are at <https://github.com/profyliu/bsnsing>.
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.1
 Imports: lpSolve, methods
-Suggests: gurobi, slam, cplexAPI, C50, party, rpart, tree
+Suggests: slam, cplexAPI, gurobi, C50, party, rpart, tree
 

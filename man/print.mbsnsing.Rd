@@ -4,10 +4,12 @@
 \alias{print.mbsnsing}
 \title{Print the Object of Class \code{\link{mbsnsing}}}
 \usage{
-\method{print}{mbsnsing}(object, ...)
+\method{print}{mbsnsing}(x, ...)
 }
 \arguments{
-\item{object}{an object of class \code{\link{mbsnsing}}.}
+\item{x}{an object of class \code{\link{mbsnsing}}.}
+
+\item{...}{further arguments.}
 }
 \description{
 Print the Object of Class \code{\link{mbsnsing}}

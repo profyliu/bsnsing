@@ -4,10 +4,14 @@
 \alias{print.bsnsing}
 \title{Print the Object of Class \code{\link{bsnsing}}}
 \usage{
-\method{print}{bsnsing}(object, print.call = T, ...)
+\method{print}{bsnsing}(x, print.call = T, ...)
 }
 \arguments{
-\item{object}{an object of class \code{\link{bsnsing}}.}
+\item{x}{an object of class \code{\link{bsnsing}}.}
+
+\item{print.call}{print out the function called, default TRUE}
+
+\item{...}{further arguments}
 }
 \description{
 Print the Object of Class \code{\link{bsnsing}}

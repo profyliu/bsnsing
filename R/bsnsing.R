@@ -625,7 +625,8 @@ bslearn <- function(bx, y, control = bscontrol()) {
           cplexAPI::closeEnvCPLEX(cplex.env)
         }
       )
-      if(class(cplex.sol) != 'list'){
+      #if(class(cplex.sol) != 'list'){
+      if(methods::is(cplex.sol, list)){
         cplex.sol <- list(lpstat = 103)
       }
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... Status: ", cplex.sol$lpstat))
@@ -1074,7 +1075,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
 
   if(verbose) {
     # print out all control values
-    prt.bscontrol(control)
+    print.bscontrol(control)
   }
 
   # convert y to binary if possible
@@ -1504,7 +1505,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = stats::na.pass, .
 #' @param num2factor an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.
 #' @param node.size if the number of training cases falling into a tree node is fewer than \code{node.size}, the node will become a leaf and no further split will be attempted on it; in addition, do not split a node if either child node that would result from the split contains fewer than \code{node.size} observation. Default is 0, which indicates that the node.size will be set automatically according to this formula: floor(sqrt(Number of training cases)).
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{lpSolve} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
+#' @param opt.solver a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{cplexAPI}, 'gurobi' requires the package \code{gurobi}, 'lpSolve' requires the package \code{lpSolve} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
 #' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi', 'enum' and 'enum_c' solvers.
 #' @param max.rules the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
@@ -1580,12 +1581,13 @@ bscontrol <- function(bin.size = 5,
 }
 
 #' Print the Object of Class \code{\link{bscontrol}}
-#' @param control an object of class \code{\link{bscontrol}}.
+#' @param x an object of class \code{\link{bscontrol}}.
+#' @param ... further arguments to the print function. 
 #' @export
-prt.bscontrol <- function(control = bscontrol()) {
+print.bscontrol <- function(x = bscontrol(), ...) {
   # Make sure no invalid argument exisits and all valid arguments are captured
   controlargs <- names(formals(bscontrol)) # legal arg names
-  controls <- control
+  controls <- x
   default.controls <- bscontrol()
 
   cat("--------------------------------\n")
@@ -1598,35 +1600,35 @@ prt.bscontrol <- function(control = bscontrol()) {
 
 #' Print the Object of Class \code{\link{bsnsing}}
 #'
-#' @param object an object of class \code{\link{bsnsing}}.
+#' @param x an object of class \code{\link{bsnsing}}.
 #' @param print.call print out the function called, default TRUE
 #' @param ... further arguments
 #' @export
-prt.bsnsing <- function(object, print.call = T, ...){
+print.bsnsing <- function(x, print.call = T, ...){
   if (print.call) {
     cat("Call: ")
-    print(object$call)
+    print(x$call)
   }
-  cat(object$y.coding.scheme)
-  # prt.bscontrol(object$control)
+  cat(x$y.coding.scheme)
+  # print.bscontrol(x$control)
   cat("\nConfusion matrix:\n")
-  print(object$confusion.matrix)
-  xname <- deparse(substitute(object))
+  print(x$confusion.matrix)
+  xname <- deparse(substitute(x))
   cat(paste0("Use the summary() function to access details of the tree.", "\n"))
 }
 
 #' Print the Object of Class \code{\link{mbsnsing}}
 #'
-#' @param object an object of class \code{\link{mbsnsing}}.
+#' @param x an object of class \code{\link{mbsnsing}}.
 #' @param ... further arguments.
 #' @export
-prt.mbsnsing <- function(object, ...){
+print.mbsnsing <- function(x, ...){
   cat("Call: ")
-  print(object$call)
-  cat(paste0(object$nclass, " trees, one for each class.", "\n"))
-  for (i in 1:object$nclass) {
+  print(x$call)
+  cat(paste0(x$nclass, " trees, one for each class.", "\n"))
+  for (i in 1:x$nclass) {
     cat(paste0("Tree ", i, ":", "\n"))
-    print(object[[i]], print.call = F)
+    print(x[[i]], print.call = F)
   }
 }
 
@@ -1652,12 +1654,12 @@ summary.mbsnsing <- function(object = stop("no 'object' arg"), ...) {
 
 #' Print the summary of \code{\link{mbsnsing}} model fits
 #'
-#' @param object an object of class \code{\link{summary.mbsnsing}}.
+#' @param x an object of class \code{\link{summary.mbsnsing}}.
 #' @param ... further arguments.
 #' @export
-prt.summary.mbsnsing <- function(object, ...) {
-  xname <- object$argname
-  cat(paste0("There are ", object$nclass, " trees in ", xname, ", one for each class in [", paste(as.character(object$ylevels), collapse = ', '), "].", "\n"))
+print.summary.mbsnsing <- function(x, ...) {
+  xname <- x$argname
+  cat(paste0("There are ", x$nclass, " trees in ", xname, ", one for each class in [", paste(as.character(x$ylevels), collapse = ', '), "].", "\n"))
   cat(paste0("Use the command summary(", xname, "[[1]]) to access details of the 1st tree, for instance.", "\n"))
 }
 
@@ -1755,17 +1757,17 @@ summary.bsnsing <- function(object = stop("no 'object' arg"), ...) {
 
 #' Print the Summary of \code{\link{bsnsing}} Model
 #'
-#' @param object an object of class \code{\link{summary.bsnsing}}.
+#' @param x an object of class \code{\link{summary.bsnsing}}.
 #' @param print.call a logical value, print out the function called if TRUE.
 #' @param ... further arguments.
 #' @export
-prt.summary.bsnsing <- function(object, print.call = T, ...) {
-  nodes <- object$nodes
+print.summary.bsnsing <- function(x, print.call = T, ...) {
+  nodes <- x$nodes
   if (print.call) {
     cat("Call: ")
-    print(object$call)
+    print(x$call)
   }
-  cat(object$y.coding.scheme)
+  cat(x$y.coding.scheme)
   cat("\nDecision Tree:\n")
   cat("-------------\n")
   for(i in 1:nrow(nodes)) {
@@ -1779,10 +1781,10 @@ prt.summary.bsnsing <- function(object, print.call = T, ...) {
     }
   }
   cat("-------------\n")
-  cat(paste0("The tree has ", object$nsplits, " splits (", object$n.frac.splits, " fractional), ", object$nleaves, " leaf nodes. \n"))
+  cat(paste0("The tree has ", x$nsplits, " splits (", x$n.frac.splits, " fractional), ", x$nleaves, " leaf nodes. \n"))
   cat("Confusion matrix:\n")
-  print(object$confusion.matrix)
-  cat(paste0("Accuracy: ", sprintf("%1.4f", object$accuracy), "\n"))
+  print(x$confusion.matrix)
+  cat(paste0("Accuracy: ", sprintf("%1.4f", x$accuracy), "\n"))
 }
 
 
@@ -2241,7 +2243,8 @@ import_external_rules <- function(x, y, verbose){
       error = function(cnd) NA,
       party::ctree(._.external_y_._ ~., data = external_df, controls = party::ctree_control(maxdepth=2))
     )
-    if(class(ct) == "BinaryTree"){
+    #if(class(ct) == "BinaryTree"){
+    if(methods::is(ct, "BinaryTree")){
       # ctree from the party package
       ctree_rules <- c()
       ctree_nodes <- list()
@@ -2287,7 +2290,8 @@ import_external_rules <- function(x, y, verbose){
       error = function(cnd) NA,
       C50::C5.0(._.external_y_._ ~., data = external_df)
     )
-    if(class(C50) == "C5.0"){
+    #if(class(C50) == "C5.0"){
+    if(methods::is(C50, "C5.0")){
       C50tree <- C50$tree  # this is a long string, need to parse it
       C50parse_vec <- unlist(strsplit(C50tree, split=' '))
       C50split_vars <- C50parse_vec[which(substr(C50parse_vec, 1,3) == 'att')]
@@ -2335,7 +2339,8 @@ import_external_rules <- function(x, y, verbose){
       error = function(cnd) NA,
       rpart::rpart(._.external_y_._ ~., data = external_df, control = rpart::rpart.control(maxdepth=2))
     )
-    if(class(rp) == "rpart"){
+    #if(class(rp) == "rpart"){
+    if(methods::is(rp, "rpart")){
       rpsplits <- rp$splits
       if(!is.null(rpsplits)){
         rpsplits <- rpsplits[which(rpsplits[,1]>0), ,drop = FALSE]

@@ -4,10 +4,12 @@
 \alias{print.bscontrol}
 \title{Print the Object of Class \code{\link{bscontrol}}}
 \usage{
-\method{print}{bscontrol}(control = bscontrol())
+\method{print}{bscontrol}(x = bscontrol(), ...)
 }
 \arguments{
-\item{control}{an object of class \code{\link{bscontrol}}.}
+\item{x}{an object of class \code{\link{bscontrol}}.}
+
+\item{...}{further arguments to the print function.}
 }
 \description{
 Print the Object of Class \code{\link{bscontrol}}
