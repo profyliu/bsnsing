@@ -4,7 +4,7 @@
 \alias{predict.bsnsing}
 \title{Make Predictions with a Fitted \code{\link{bsnsing}} Model}
 \usage{
-\method{predict}{bsnsing}(object, newdata = NULL, type = c("prob", "class"))
+\method{predict}{bsnsing}(object, newdata = NULL, type = c("prob", "class"), ...)
 }
 \arguments{
 \item{object}{a \code{\link{bsnsing}} model object.}
@@ -12,6 +12,8 @@
 \item{newdata}{a optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.}
 
 \item{type}{a character string indicating the type of prediction. \emph{'prob'} predicts the probability of being a positive case (i.e., y = 1), and \emph{'class'} predicts the class membership.}
+
+\item{...}{further arguments to predict.bsnsing.}
 }
 \value{
 a vector containing the predicted values.
@@ -20,8 +22,8 @@ a vector containing the predicted values.
 Implements the generic \code{predict} function to make predictions on new data using a trained \code{\link{bsnsing}} model.
 }
 \examples{
+\dontrun{
 # Load data
-data('GlaucomaMVF', package = 'ipred')
 n <- nrow(GlaucomaMVF)
 train_index = sample(1:n, round(0.5*n))
 test_index = setdiff(1:n, train_index)
@@ -31,4 +33,5 @@ bs <- bsnsing(Class ~ ., data = GlaucomaMVF, subset = train_index)
 pred <- predict(bs, GlaucomaMVF[test_index, ], type = 'class')
 # Display the confusion matrix
 table(pred, actual = GlaucomaMVF[test_index, 'Class'])
+}
 }

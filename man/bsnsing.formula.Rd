@@ -4,7 +4,7 @@
 \alias{bsnsing.formula}
 \title{Learn a Classification Tree using Boolean Sensing}
 \usage{
-\method{bsnsing}{formula}(formula, data, subset, na.action = na.pass, ...)
+\method{bsnsing}{formula}(formula, data, subset, na.action = stats::na.pass, ...)
 }
 \arguments{
 \item{formula}{an object of class "\code{\link[stats]{formula}}": a symbolic description of the model to be fitted.}
@@ -25,6 +25,7 @@ The program builds a binary classification tree for each unique value in the res
 }
 \examples{
 # Multi-class classification
+\dontrun{
 bs <- bsnsing(Species ~ ., data = iris)
 summary(bs)
 summary(bs[[1]])  # display the tree for the first class
@@ -32,8 +33,7 @@ summary(bs[[2]])  # display the tree for the second class
 summary(bs[[3]])  # display the tree for the third class
 
 # Two-class classification
-data(Auto, package = 'ISLR')
-Auto$origin <- ifelse(Auto$origin == 1, 'USA', 'NonUSA')
-bs <- bsnsing(origin ~ mpg + displacement + horsepower + weight, data = Auto, verbose = T)
+bs <- bsnsing(origin ~ mpg + displacement + horsepower + weight, data = auto, verbose = TRUE)
 summary(bs)
+}
 }

@@ -20,7 +20,7 @@ Recode a Variable with Two Unique Values into an 0/1 Vector
 \examples{
 y <- factor(c('good', 'bad', 'good', 'good', 'bad'))
 (yb <- binarize.y(y))
-y <- c(T, F, F, F, T)
+y <- c(TRUE, FALSE, FALSE, FALSE, TRUE)
 (yb <- binarize.y(y))
 y <- c(1, 2, 2, 1, 2)
 (yb <- binarize.y(y))

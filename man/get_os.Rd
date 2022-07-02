@@ -2,12 +2,13 @@
 % Please edit documentation in R/bsnsing.R
 \name{get_os}
 \alias{get_os}
-\title{Get OS type (windows, osx, linux)
-This function is not exposed to bsnsing users.}
+\title{Get the operating system type (windows, osx, linux).}
 \usage{
 get_os()
 }
+\value{
+a character string indicating the OS type
+}
 \description{
-Get OS type (windows, osx, linux)
-This function is not exposed to bsnsing users.
+This function is for internal use, to determine the file extension of the bslearn shared library. .dylib for oxs, .so for linux and .dll for windows.
 }

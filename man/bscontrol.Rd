@@ -36,7 +36,7 @@ bscontrol(
 
 \item{stop.prob}{if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.}
 
-\item{opt.solver}{a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.}
+\item{opt.solver}{a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{lpSolve} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.}
 
 \item{solver.timelimit}{the solver time limit in seconds. Currently only applicable to 'gurobi', 'enum' and 'enum_c' solvers.}
 
@@ -64,6 +64,6 @@ Define Parameters for the \code{\link{bsnsing}} Fit
 }
 \examples{
 bscontrol()  # display the default parameters
-bsc <- bscontrol(stop.prob = 0.8, nseg.numeric = 10, verbose = T)
+bsc <- bscontrol(stop.prob = 0.8, nseg.numeric = 10, verbose = TRUE)
 bsc
 }

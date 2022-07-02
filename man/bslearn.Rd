@@ -20,12 +20,13 @@ a list containing the splitting solution.
 The function solves a mixed integer program (MIP) to either maximize the Gini reduction (opt.model = 'gini') or the number of misclassifications (opt.model = 'error'). The optimal rule serves as the split condition in the classification tree built by \code{\link{bsnsing}}.
 }
 \examples{
-data(Auto, package = 'ISLR')
-x <- Auto[, c('mpg', 'cylinders', 'displacement')]
-y <- ifelse(Auto$origin == 1, 1, 0)
+\dontrun{
+x <- auto[, c('mpg', 'cylinders', 'displacement')]
+y <- ifelse(auto$origin == 'USA', 1L, 0L)
 # binarize x by y = 1
 bx <- binarize(x, y, target = 1)
 # learn the optimal Boolean rule
-bssol <- bslearn(bx, y)
+bssol <- bslearn(bx, y, bscontrol(opt.solver = 'enum'))
 cat(paste("Optimal rule:" , bssol$rules, "\n"))
+}
 }

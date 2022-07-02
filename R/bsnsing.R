@@ -1,11 +1,17 @@
-#' bsnsing: A package for decision tree learning with Boolean sensing
+#' bsnsing: A decision tree induction method based on recursive optimal boolean rule composition
 #'
-#' The bsnsing package provides functions for building a decision tree classifier and making predictions. It solves the two-class and multi-class classification problems under the supervised learning paradigm. While building a decision tree, \code{bsnsing} uses a Boolean rule involving multiple variables to split a node. Each split rule is identified by solving an optimization model that minimizes misclassification and complexity. Compared to other decision tree learners such as \code{\link[rpart]{rpart}} and \code{\link[party]{party}} that split a node based on a single variable, \code{\link{bsnsing}} can provide a shorter and more interpretable tree while scoring a high predictive accuracy.
+#' The bsnsing package provides functions for building a decision tree classifier and making predictions. It solves a mixed-integer programming (MIP) model to maximize the Gini reduction at each node split, and each node split rule can utilize multiple input variables. Benchmarking experiments on 75 open data sets suggest that bsnsing trees are the most capable of discriminating new cases compared to trees trained by other decision tree codes including the rpart, C50, party and tree packages in R. Compared to other optimal decision tree packages, including DL8.5, OSDT, GOSDT and indirectly more, bsnsing stands out in its training speed, ease of use and broader applicability without losing in prediction accuracy. For more information, please check out the paper \url{https://arxiv.org/abs/2205.15263}, to be published in INFORMS Journal on Computing.
 #'
-#' @section  Learn functions:
-#' The learn functions include \code{\link{bsnsing}}, \code{\link{bsnsing.formula}} and \code{\link{bsnsing.default}}.
+#' @section The ENUM algorithm:
+#' The default method for solving the MIP model is the implicit enumeration (ENUM) algorithm, while other solvers including GUROBI, CPLEX and lpSolve can be used (via specifying the opt.solver option in the \code{\link{bsnsing}} function). However, the users are strongly suggested to compile the bslearn.c file, make it into a shared library (e.g., .dylib, .so or .dll binary file) and paste the binary file in the work directory. In this way, the bsnsing will leverage the compiled code (instead of the R code) for the ENUM algorithm, which runs much (~40x) faster. All benchmarking experiments were run using the compiled ENUM algorithm. The C source file and the MAKE file can be found at \url{https://github.com/profyliu/bsnsing}. Pre-compiled binary files for different target platforms are also provided there for the convenience of the users (just download the .dylib, .so or the .dll file, depending on the operating system, and put it in the work directory). Future updates of this package will internalize the compilation step, but for now only the R implementation of the ENUM algorithm is included in the package source, so serious users please take the extra step outlined above. 
+#' @section More data sets:
+#' Several data frames (i.e., \code{\link{auto}}, \code{\link{iris}}, \code{\link{GlaucomaMVF}} and \code{\link{BreastCancer}}) used in the example code are included in this package. More two-class and multi-class classification data sets can be found at \url{https://github.com/profyliu/bsnsing}. 
+#' @section Learn functions:
+#' The learn (train) functions include \code{\link{bsnsing}}, \code{\link{bsnsing.formula}} and \code{\link{bsnsing.default}}.
 #' @section Predict functions:
 #' The predict functions include: \code{\link{predict.bsnsing}} and \code{\link{predict.mbsnsing}}.
+#' @section Plot functions:
+#' A \code{\link{bsnsing}} object (tree) can be plotted into a PDF file, or in the form of latex code, by the function \code{\link{show.bsnsing}}. The ROC curve can be plotted using the function \code{\link{ROC_func}}.
 #' @section Auxilliary functions:
 #' Here is a list of internal functions of the package that are open for end users.
 #' \code{\link{summary.bsnsing}}
@@ -16,13 +22,6 @@
 #' \code{\link{binarize.y}},
 #' \code{\link{bslearn}},
 #' \code{\link{bscontrol}}
-#' \code{\link{plot.bsnsing}}
-#' \code{\link{ROC_func}}
-#'
-#' @section Future work:
-#' Default parameter tuning for out-of-the-box performance. The default parameters in \code{\link{bscontrol}} are currently set quite arbitrarily. Experiments will be performed on a large collection of data sets in order to pinpoint the parameter combination that work well (in terms of training speed, predictive accuracy and interpretability, etc.) under most use cases.
-#'
-#' Weighting positive and negative cases in imbalanced training sets. If false positive and false negative are given the same weight in a highly imbalanced data set, a null split might be produced in as early as the root node, resulting in a trivial classification, i.e., claiming all cases to fall in the majority class. A weighting scheme should be implemented to ameliorate this situation.
 #'
 #' @author Yanchao Liu
 #'
@@ -42,19 +41,20 @@ NULL
 #' @param control a list or a \code{bscontrol()} object. The list should contain the following three attributes: \emph{nseg.numeric}, a positive integer indicating the maximum number of segments used in discretizing a numeric variable, \emph{nseg.factor}, a positive integer indicating the maximum number of levels allowed for a factor variable, and \emph{bin.size}, a positive integer indicating the minimum number of observations to fall in a segment.
 #' @return a data frame containing binary variables, or a character string describing the rule that perfectly split the target.
 #' @examples
+#' \dontrun{
 #' # Load and prepare data
-#' data(Auto, package = 'ISLR')
-#' x <- Auto[, c('mpg', 'cylinders', 'displacement')]
+#' x <- auto[, c('mpg', 'cylinders', 'displacement')]
 #' x$cylinders <- as.factor(x$cylinders)
-#' y <- ifelse(Auto$origin == 1, 1, 0)
+#' y <- ifelse(auto$origin == 'USA', 1L, 0L)
 #' # binarize x by y = 1
 #' bx1 <- binarize(x, y, target = 1)
 #' head(bx1)
 #' # binarize x by y = 0
 #' bx0 <- binarize(x, y, target = 0)
 #' head(bx0)
-#' # when selecting only one column from a data frame, use drop = F to maintain
-#' binarize(Auto[,'mpg', drop = F], y, target = 1)
+#' # when selecting only one column from a data frame, use drop = FALSE to maintain
+#' binarize(auto[,'mpg', drop = FALSE], y, target = 1)
+#' }
 #'
 #' @export
 #'
@@ -328,14 +328,15 @@ binarize.factor <- function(x, name, y, segments = 10, bin.size = 5) {
 #'
 #' @return a list containing the splitting solution.
 #' @examples
-#' data(Auto, package = 'ISLR')
-#' x <- Auto[, c('mpg', 'cylinders', 'displacement')]
-#' y <- ifelse(Auto$origin == 1, 1, 0)
+#' \dontrun{
+#' x <- auto[, c('mpg', 'cylinders', 'displacement')]
+#' y <- ifelse(auto$origin == 'USA', 1L, 0L)
 #' # binarize x by y = 1
 #' bx <- binarize(x, y, target = 1)
 #' # learn the optimal Boolean rule
-#' bssol <- bslearn(bx, y)
+#' bssol <- bslearn(bx, y, bscontrol(opt.solver = 'enum'))
 #' cat(paste("Optimal rule:" , bssol$rules, "\n"))
+#' }
 #' @export
 
 bslearn <- function(bx, y, control = bscontrol()) {
@@ -549,7 +550,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       )
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", grbtime['elapsed']), "s ... Status: ", grbsol$status))
       if(grbsol$status != 'INFEASIBLE'){  # Status = 3 is infeasible, because of the node.size constraints.
-        solution_zw <- setNames((grbsol$x)[1:(n+p)], allcolnames[1:(n+p)])
+        solution_zw <- stats::setNames((grbsol$x)[1:(n+p)], allcolnames[1:(n+p)])
         objval <- n0*n1 + grbsol$objval
       } else{
         solution_zw <- rep(0, n+p)
@@ -573,7 +574,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       )
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... Status: ", sol$status))
       if(sol$status != 2){
-        solution_zw <- setNames((sol$solution)[1:(n+p)], allcolnames[1:(n+p)])
+        solution_zw <- stats::setNames((sol$solution)[1:(n+p)], allcolnames[1:(n+p)])
         objval <- n0*n1 + sol$objval
       } else{
         solution_zw <- rep(0, n+p)
@@ -629,7 +630,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
       }
       if (verbose) cat(paste(" Elapsed: ", sprintf("%1.5f", lptime['elapsed']), "s ... Status: ", cplex.sol$lpstat))
       if(cplex.sol$lpstat != 103){
-        solution_zw <- setNames((cplex.sol$x)[1:(n+p)], allcolnames[1:(n+p)])
+        solution_zw <- stats::setNames((cplex.sol$x)[1:(n+p)], allcolnames[1:(n+p)])
         objval <- n0*n1 + cplex.sol$objval
       } else{
         solution_zw <- rep(0, n+p)
@@ -936,6 +937,7 @@ bslearn <- function(bx, y, control = bscontrol()) {
 #' @return an object of class \code{bsnsing} for a two-class problem or an object of class \code{mbsnsing} for a multi-class problem.
 #'
 #' @examples
+#' \dontrun{
 #' # Use the formula format
 #' bs <- bsnsing(Class~., data = BreastCancer)
 #' summary(bs)
@@ -949,18 +951,20 @@ bslearn <- function(bx, y, control = bscontrol()) {
 #' predict(bs, type = 'prob')  # the fitted probabilities
 #'
 #' # Use the (x, y) format, y must have two levels
-#' y <- ifelse(iris$Species == 'setosa', 1, 0)
+#' y <- ifelse(iris$Species == 'setosa', 1L, 0L)
 #' x <- iris[, c('Sepal.Length', 'Sepal.Width', 'Petal.Length', 'Petal.Width')]
-#' bs <- bsnsing(x, y, verbose = T)
+#' bs <- bsnsing(x, y, verbose = TRUE)
 #' summary(bs)
+#' }
 #'
 #' @export
 bsnsing <- function(x, ...) UseMethod("bsnsing")
 
 #' A class that contains multi-class classification model built by bsnsing. Can be used in summary and predict functions.
 #'
+#' @importFrom methods new
 #' @export
-mbsnsing <- setClass('mbsnsing')
+mbsnsing <- methods::setClass('mbsnsing')
 
 
 #' Learn a Classification Tree with Boolean Sensing
@@ -969,13 +973,16 @@ mbsnsing <- setClass('mbsnsing')
 #'
 #' @param x a data frame containing independent variables. Columns can be of numeric, integer, factor and logical types. The column names must be proper identifiers (e.g., must start with a letter, cannot contain special characters and spaces, etc.).
 #' @param y a vector of the response variable. The response variable can be of an integer, numeric, logical or factor type, but must have only two unique values. Typical coding of a binary response variable is 0 (for negative case) and 1 (for positive cases).
-#' @param control an object of class \code{\link{bscontrol}}.
+#' @param controls an object of class \code{\link{bscontrol}}.
+#' @param ... further argument to be passed to bsnsing.default.
 #' @return an object of class \code{bsnsing}.
 #' @examples
-#' y <- ifelse(iris$Species == 'setosa', 1, 0)
+#' \dontrun{
+#' y <- ifelse(iris$Species == 'setosa', 1L, 0L)
 #' x <- iris[, c('Sepal.Length', 'Sepal.Width', 'Petal.Length', 'Petal.Width')]
-#' bs <- bsnsing(x, y, verbose = T)
+#' bs <- bsnsing(x, y, verbose = TRUE)
 #' summary(bs)
+#' }
 #' @export
 #'
 bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
@@ -1019,7 +1026,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   if (length(numeric.na.col.index) > 0) {
     # replace NA with column median
     for (j in numeric.na.col.index) {
-      naVal <- median(x[,j], na.rm = T)
+      naVal <- stats::median(x[,j], na.rm = T)
       x[is.na(x[, j]), j] <- naVal
     }
   }
@@ -1033,7 +1040,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
 
 
   if (tolower(control$opt.solver) == 'lpsolve') {
-    if(is.element('lpSolve', installed.packages()[,1])) control$opt.solver <- 'lpSolve'
+    if(is.element('lpSolve', utils::installed.packages()[,1])) control$opt.solver <- 'lpSolve'
     else {
       control$opt.solver <- 'greedy'
       warning("The lpSolve is not installed. The opt.solver is set to 'greedy' instead.")
@@ -1041,7 +1048,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   }
 
   if (tolower(control$opt.solver) == 'cplex') {
-    if(is.element('cplexAPI', installed.packages()[,1])) control$opt.solver <- 'cplex'
+    if(is.element('cplexAPI', utils::installed.packages()[,1])) control$opt.solver <- 'cplex'
     else {
       control$opt.solver <- 'greedy'
       warning("The cplexAPI is not installed. The opt.solver is set to 'greedy' instead.")
@@ -1049,7 +1056,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
   }
 
   if (tolower(control$opt.solver) == 'gurobi') {
-    if(is.element('gurobi', installed.packages()[,1])) control$opt.solver <- 'gurobi'
+    if(is.element('gurobi', utils::installed.packages()[,1])) control$opt.solver <- 'gurobi'
     else {
       control$opt.solver <- 'greedy'
       warning("The cplexAPI is not installed. The opt.solver is set to 'greedy' instead.")
@@ -1067,7 +1074,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
 
   if(verbose) {
     # print out all control values
-    print.bscontrol(control)
+    prt.bscontrol(control)
   }
 
   # convert y to binary if possible
@@ -1122,7 +1129,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     todo.nodes[[1]] <- NULL
     if(verbose) cat(paste("Iter:", iter.count, "exploring node", this$node.number, "\n"))
 
-    this.x <- x[this$node.obs, , drop = F]
+    this.x <- x[this$node.obs, , drop = FALSE]
     this.y <- y[this$node.obs]
     if(!control$suppress.internal){
       bx <- binarize(this.x, this.y, target = this$node.split.target, control = control)
@@ -1151,7 +1158,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
             bx <- data.frame(placeholder = rep(0, nrow(this.x)))
             for(this_external_rule in external_rules){
               this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
-              bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
+              bx <- stats::setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
             }
             bx[,1] <- NULL  # remove the placeholder column
           } else {
@@ -1171,7 +1178,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
           external_rules <- import_external_rules(this.x, this.y, verbose)
           for(this_external_rule in external_rules){
             this_external_x <- ifelse(with(this.x, eval(parse(text=this_external_rule))), 1, 0)
-            bx <- setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
+            bx <- stats::setNames(cbind(bx, this_external_x), c(colnames(bx), this_external_rule))
           }
         }
       }
@@ -1259,10 +1266,10 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
       tree.nodes[[length(tree.nodes) + 1]] <- left
       tree.nodes[[length(tree.nodes) + 1]] <- right
 
-      fval <- c(fval, setNames(rep(left.class, left.nobs), left.obs))
-      fval <- c(fval, setNames(rep(right.class, right.nobs), right.obs))
-      fprob <- c(fprob, setNames(rep(left.prob, left.nobs), left.obs))
-      fprob <- c(fprob, setNames(rep(right.prob, right.nobs), right.obs))
+      fval <- c(fval, stats::setNames(rep(left.class, left.nobs), left.obs))
+      fval <- c(fval, stats::setNames(rep(right.class, right.nobs), right.obs))
+      fprob <- c(fprob, stats::setNames(rep(left.prob, left.nobs), left.obs))
+      fprob <- c(fprob, stats::setNames(rep(right.prob, right.nobs), right.obs))
 
       if(verbose) {
         cat(paste("-- Node", this$node.number, "is perfectly split by rule:", this$node.split.rule, "\n"))
@@ -1272,14 +1279,14 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     } else if (case == 2) {
       this$node.split.rule <- this.rule
       tree.nodes[[length(tree.nodes) + 1]] <- this
-      fval <- c(fval, setNames(rep(this$node.class, this$node.nobs), this$node.obs))
-      fprob <- c(fprob, setNames(rep(this$node.prob, this$node.nobs), this$node.obs))
+      fval <- c(fval, stats::setNames(rep(this$node.class, this$node.nobs), this$node.obs))
+      fprob <- c(fprob, stats::setNames(rep(this$node.prob, this$node.nobs), this$node.obs))
       if(verbose) cat(paste("-- Node", this$node.number, "becomes a leaf node. No split on it. \n"))
     } else if (case == 3) {
       this$node.split.rule <- this.rule
       tree.nodes[[length(tree.nodes) + 1]] <- this
-      fval <- c(fval, setNames(rep(this$node.class, this$node.nobs), this$node.obs))
-      fprob <- c(fprob, setNames(rep(this$node.prob, this$node.nobs), this$node.obs))
+      fval <- c(fval, stats::setNames(rep(this$node.class, this$node.nobs), this$node.obs))
+      fprob <- c(fprob, stats::setNames(rep(this$node.prob, this$node.nobs), this$node.obs))
       if(verbose) cat(paste("-- Node", this$node.number, "becomes a leaf node. A null split is disgarded. \n"))
     } else if (case == 4) {
       left.obs <- with(this.x, this$node.obs[which(eval(parse(text = this.rule)))])
@@ -1342,8 +1349,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
                               "prop =", sprintf("%1.4f", left.prop), "class =", left.class, "n1 =", left.n1, "n0 =", left.n0, "prob =", sprintf("%1.4f", left.prob), "\n"))
       } else {
         tree.nodes[[length(tree.nodes) + 1]] <- left
-        fval <- c(fval, setNames(rep(left.class, left.nobs), left.obs))
-        fprob <- c(fprob, setNames(rep(left.prob, left.nobs), left.obs))
+        fval <- c(fval, stats::setNames(rep(left.class, left.nobs), left.obs))
+        fprob <- c(fprob, stats::setNames(rep(left.prob, left.nobs), left.obs))
         if(verbose) {
           cat(paste("----> Left (rule = true) leaf: Node", left.number, ", parent =",
                     left.parent, "nobs =", left.nobs, "prop =", sprintf("%1.4f", left.prop), "class =", left.class, "n1 =",
@@ -1363,8 +1370,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
                               "prop =", sprintf("%1.4f", right.prop), "class =", right.class, "n1 =", right.n1, "n0 =", right.n0, "prob =", sprintf("%1.4f", right.prob), "\n"))
       } else {
         tree.nodes[[length(tree.nodes) + 1]] <- right
-        fval <- c(fval, setNames(rep(right.class, right.nobs), right.obs))
-        fprob <- c(fprob, setNames(rep(right.prob, right.nobs), right.obs))
+        fval <- c(fval, stats::setNames(rep(right.class, right.nobs), right.obs))
+        fprob <- c(fprob, stats::setNames(rep(right.prob, right.nobs), right.obs))
         if(verbose) {
           cat(paste("----> Right (rule = false) leaf: Node", right.number, ", parent =",
                     right.parent, "nobs =", right.nobs, "prop =", sprintf("%1.4f", right.prop), "class =", right.class, "n1 =",
@@ -1380,8 +1387,8 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
     } else if (case == 5) {
       this$node.split.rule <- this.rule
       tree.nodes[[length(tree.nodes) + 1]] <- this
-      fval <- c(fval, setNames(rep(this$node.class, this$node.nobs), this$node.obs))
-      fprob <- c(fval, setNames(rep(this$node.prob, this$node.nobs), this$node.obs))
+      fval <- c(fval, stats::setNames(rep(this$node.class, this$node.nobs), this$node.obs))
+      fprob <- c(fval, stats::setNames(rep(this$node.prob, this$node.nobs), this$node.obs))
       if(verbose) cat(paste("-- Node", this$node.number, "becomes a leaf node. No split on it. \n"))
     } else {
       stop("Something went wrong.")
@@ -1424,6 +1431,7 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
 #' @return an object of \code{\link{bsnsing}} for a two-class problem or an object of \code{\link{mbsnsing}} for a multi-class problem.
 #' @examples
 #' # Multi-class classification
+#' \dontrun{
 #' bs <- bsnsing(Species ~ ., data = iris)
 #' summary(bs)
 #' summary(bs[[1]])  # display the tree for the first class
@@ -1431,13 +1439,12 @@ bsnsing.default <- function(x, y, controls = bscontrol(), ...) {
 #' summary(bs[[3]])  # display the tree for the third class
 #'
 #' # Two-class classification
-#' data(Auto, package = 'ISLR')
-#' Auto$origin <- ifelse(Auto$origin == 1, 'USA', 'NonUSA')
-#' bs <- bsnsing(origin ~ mpg + displacement + horsepower + weight, data = Auto, verbose = T)
+#' bs <- bsnsing(origin ~ mpg + displacement + horsepower + weight, data = auto, verbose = TRUE)
 #' summary(bs)
+#' }
 #' @export
 #'
-bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
+bsnsing.formula <- function(formula, data, subset, na.action = stats::na.pass, ...) {
   Call <- match.call()
   indx <- match(c("formula", "data", "subset"), names(Call), nomatch = 0L)
   if (indx[1] == 0L) stop("a 'formula' argument is required")
@@ -1447,15 +1454,15 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
   mf <- eval.parent(temp)
   Terms <- attr(mf, "terms")
   term_labels <- attr(Terms, "term.labels")
-  mfv <- mf[, term_labels, drop = F]  # drop = F means return a data frame (not a vector) when there is one column
+  mfv <- mf[, term_labels, drop = FALSE]  # drop = FALSE means return a data frame (not a vector) when there is one column
   # remove factor variables with only 1 unique value
   factorcol <- sapply(mfv, function(x) is.factor(x))
-  factormfv <- mfv[, factorcol, drop = F]
+  factormfv <- mfv[, factorcol, drop = FALSE]
   collevels <- sapply(factormfv, function(x) length(unique(x)))
   removecol <- names(collevels[collevels == 1])
   if(length(removecol) > 0) stop(paste("Factor variable", removecol, "has only one unique level. Remove this variable and try again."))
-  x <- model.matrix(Terms, data = mf)
-  y <- model.response(mf)
+  x <- stats::model.matrix(Terms, data = mf)
+  y <- stats::model.response(mf)
 
   # Decide if y is binary or multiclass
   nclass <- length(unique(y))
@@ -1497,7 +1504,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @param num2factor an equality binarization rule will be created for each unique value of a numeric variable (in addition to the inequality binarization attempt), if the number of unique values of the numeric variable is less than \code{num2factor}.
 #' @param node.size if the number of training cases falling into a tree node is fewer than \code{node.size}, the node will become a leaf and no further split will be attempted on it; in addition, do not split a node if either child node that would result from the split contains fewer than \code{node.size} observation. Default is 0, which indicates that the node.size will be set automatically according to this formula: floor(sqrt(Number of training cases)).
 #' @param stop.prob if the proportion of the majority class in a tree node is greater than \code{stop.prob}, the node will become a leaf and no further split will be attempted on it.
-#' @param opt.solver a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{\link[lpSolve]{lpSolve}} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
+#' @param opt.solver a character string in the set {'enum', 'enum_c', 'gurobi', 'cplex', 'lpSolve', 'greedy'} indicating the optimization solver to be used in the program. The choice of 'cplex' requires the package \code{\link[cplexAPI]{cplexAPI}}, 'gurobi' requires the package \code{\link[gurobi]{gurobi}}, 'lpSolve' requires the package \code{lpSolve} and 'enum_c' requires the .dll or .dylib file. The default is 'greedy' because it is fast and does not rely on other packages. The 'enum' algorithm is the implicit enumeration method which guarantees to find the optimal solution, typically faster than an optimization solver. It is a tradeoff between the greedy heuristic and the mathematical optimization methods.
 #' @param solver.timelimit the solver time limit in seconds. Currently only applicable to 'gurobi', 'enum' and 'enum_c' solvers.
 #' @param max.rules the maximum number of features allowed to enter an OR-clause split rule. A small max.rules reduces the search space and regulates model complexity. Default is 3.
 #' @param opt.model a character string in the set {'gini','error'} indicating the optimization model to solve in the program. The default is 'gini'. The choice of 'error' is faster because the optimization model is smaller. The default is 'gini'.
@@ -1510,7 +1517,7 @@ bsnsing.formula <- function(formula, data, subset, na.action = na.pass, ...) {
 #' @return An object of class \code{\link{bscontrol}}.
 #' @examples
 #' bscontrol()  # display the default parameters
-#' bsc <- bscontrol(stop.prob = 0.8, nseg.numeric = 10, verbose = T)
+#' bsc <- bscontrol(stop.prob = 0.8, nseg.numeric = 10, verbose = TRUE)
 #' bsc
 #' @export
 #'
@@ -1575,7 +1582,7 @@ bscontrol <- function(bin.size = 5,
 #' Print the Object of Class \code{\link{bscontrol}}
 #' @param control an object of class \code{\link{bscontrol}}.
 #' @export
-print.bscontrol <- function(control = bscontrol()) {
+prt.bscontrol <- function(control = bscontrol()) {
   # Make sure no invalid argument exisits and all valid arguments are captured
   controlargs <- names(formals(bscontrol)) # legal arg names
   controls <- control
@@ -1592,14 +1599,16 @@ print.bscontrol <- function(control = bscontrol()) {
 #' Print the Object of Class \code{\link{bsnsing}}
 #'
 #' @param object an object of class \code{\link{bsnsing}}.
+#' @param print.call print out the function called, default TRUE
+#' @param ... further arguments
 #' @export
-print.bsnsing <- function(object, print.call = T, ...){
+prt.bsnsing <- function(object, print.call = T, ...){
   if (print.call) {
     cat("Call: ")
     print(object$call)
   }
   cat(object$y.coding.scheme)
-  # print.bscontrol(object$control)
+  # prt.bscontrol(object$control)
   cat("\nConfusion matrix:\n")
   print(object$confusion.matrix)
   xname <- deparse(substitute(object))
@@ -1609,8 +1618,9 @@ print.bsnsing <- function(object, print.call = T, ...){
 #' Print the Object of Class \code{\link{mbsnsing}}
 #'
 #' @param object an object of class \code{\link{mbsnsing}}.
+#' @param ... further arguments.
 #' @export
-print.mbsnsing <- function(object, ...){
+prt.mbsnsing <- function(object, ...){
   cat("Call: ")
   print(object$call)
   cat(paste0(object$nclass, " trees, one for each class.", "\n"))
@@ -1623,6 +1633,7 @@ print.mbsnsing <- function(object, ...){
 #' Summarize mbsnsing Model Fits
 #'
 #' @param object an object of class \code{\link{mbsnsing}}.
+#' @param ... further arguments.
 #' @return a list of detailed information in the given \code{object}.
 #' @export
 summary.mbsnsing <- function(object = stop("no 'object' arg"), ...) {
@@ -1642,8 +1653,9 @@ summary.mbsnsing <- function(object = stop("no 'object' arg"), ...) {
 #' Print the summary of \code{\link{mbsnsing}} model fits
 #'
 #' @param object an object of class \code{\link{summary.mbsnsing}}.
+#' @param ... further arguments.
 #' @export
-print.summary.mbsnsing <- function(object, ...) {
+prt.summary.mbsnsing <- function(object, ...) {
   xname <- object$argname
   cat(paste0("There are ", object$nclass, " trees in ", xname, ", one for each class in [", paste(as.character(object$ylevels), collapse = ', '), "].", "\n"))
   cat(paste0("Use the command summary(", xname, "[[1]]) to access details of the 1st tree, for instance.", "\n"))
@@ -1652,6 +1664,7 @@ print.summary.mbsnsing <- function(object, ...) {
 #' Summarize the bsnsing Model Fits
 #'
 #' @param object an object of class \code{\link{bsnsing}}.
+#' @param ... further arguments.
 #' @return a list of detailed information in the given \code{object}.
 #' @export
 summary.bsnsing <- function(object = stop("no 'object' arg"), ...) {
@@ -1743,8 +1756,10 @@ summary.bsnsing <- function(object = stop("no 'object' arg"), ...) {
 #' Print the Summary of \code{\link{bsnsing}} Model
 #'
 #' @param object an object of class \code{\link{summary.bsnsing}}.
+#' @param print.call a logical value, print out the function called if TRUE.
+#' @param ... further arguments.
 #' @export
-print.summary.bsnsing <- function(object, print.call = T, ...) {
+prt.summary.bsnsing <- function(object, print.call = T, ...) {
   nodes <- object$nodes
   if (print.call) {
     cat("Call: ")
@@ -1779,7 +1794,7 @@ print.summary.bsnsing <- function(object, print.call = T, ...) {
 #' @examples
 #' y <- factor(c('good', 'bad', 'good', 'good', 'bad'))
 #' (yb <- binarize.y(y))
-#' y <- c(T, F, F, F, T)
+#' y <- c(TRUE, FALSE, FALSE, FALSE, TRUE)
 #' (yb <- binarize.y(y))
 #' y <- c(1, 2, 2, 1, 2)
 #' (yb <- binarize.y(y))
@@ -1847,10 +1862,11 @@ binarize.y <- function(y, verbose = F) {
 #' @param object a \code{\link{bsnsing}} model object.
 #' @param newdata a optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.
 #' @param type a character string indicating the type of prediction. \emph{'prob'} predicts the probability of being a positive case (i.e., y = 1), and \emph{'class'} predicts the class membership.
+#' @param ... further arguments to predict.bsnsing.
 #' @return a vector containing the predicted values.
 #' @examples
+#' \dontrun{
 #' # Load data
-#' data('GlaucomaMVF', package = 'ipred')
 #' n <- nrow(GlaucomaMVF)
 #' train_index = sample(1:n, round(0.5*n))
 #' test_index = setdiff(1:n, train_index)
@@ -1860,9 +1876,10 @@ binarize.y <- function(y, verbose = F) {
 #' pred <- predict(bs, GlaucomaMVF[test_index, ], type = 'class')
 #' # Display the confusion matrix
 #' table(pred, actual = GlaucomaMVF[test_index, 'Class'])
+#' }
 #' @export
 #'
-predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
+predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class"), ...) {
   if (!inherits(object, "bsnsing")) stop("Not a legitimate \"bsnsing\" object")
   type <- match.arg(type)
   ycode <- object$ycode
@@ -1884,9 +1901,9 @@ predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
     } else {
       # Model is built by bsnsing.formula
       if (is.null(attr(newdata, "terms"))) {
-        Terms <- delete.response(object$terms)
-        mf <- model.frame(Terms, newdata, xlev = attr(object, "xlevels"), na.action = na.pass)
-        newdata <- as.data.frame(model.matrix(Terms, mf))
+        Terms <- stats::delete.response(object$terms)
+        mf <- stats::model.frame(Terms, newdata, xlev = attr(object, "xlevels"), na.action = stats::na.pass)
+        newdata <- as.data.frame(stats::model.matrix(Terms, mf))
       }
       # ycode <- rownames(object$contrasts)  # this line may be unnecessary
     }
@@ -1897,10 +1914,10 @@ predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
     tree.nodes[[current.i]]$node.obs <- 1:nrow(newdata)  ## assign node.obs for the root node
     this.node <- tree.nodes[[current.i]]
     if (type == 'prob') {
-      pred = setNames(rep(this.node$node.prob, nrow(newdata)), 1:nrow(newdata))
-      #pred = setNames(rep(ifelse(this.node$node.n1 == 0, 0, ifelse(this.node$node.n0 == 0, 1, this.node$node.n1/(this.node$node.n1 + this.node$node.n0))), nrow(newdata)), 1:nrow(newdata))
+      pred = stats::setNames(rep(this.node$node.prob, nrow(newdata)), 1:nrow(newdata))
+      #pred = stats::setNames(rep(ifelse(this.node$node.n1 == 0, 0, ifelse(this.node$node.n0 == 0, 1, this.node$node.n1/(this.node$node.n1 + this.node$node.n0))), nrow(newdata)), 1:nrow(newdata))
     } else if (type == 'class') {
-      pred = setNames(rep(ycode[this.node$node.class + 1], nrow(newdata)), 1:nrow(newdata))
+      pred = stats::setNames(rep(ycode[this.node$node.class + 1], nrow(newdata)), 1:nrow(newdata))
     } else stop("The 'type' argument is not recognized")
 
     done <- rep(0, length(tree.nodes))  ## 0: not visited, 1: self done, 2: left child done, 3: all done
@@ -1949,10 +1966,12 @@ predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
 #' Make Predictions with a \code{\link{bsnsing}} Model
 #'
 #' @param object an object of class \code{\link{mbsnsing}}.
-#' @param an optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.
+#' @param newdata an optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.
 #' @param type a character string indicating the type of prediction. \emph{'prob'} predicts the probability of being in each class, and \emph{'class'} predicts the class membership.
+#' @param ... further arguments to predict.mbsnsing.
 #' @return a data frame containing the predicted values.
 #' @examples
+#' \dontrun{
 #' n <- nrow(iris)
 #' train_index <- sample(1:n, round(0.5*n))
 #' test_index <- setdiff(1:n, train_index)
@@ -1965,9 +1984,10 @@ predict.bsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
 #' # Predict the probabilities
 #' predprob <- predict(bs, iris[test_index, ], type = 'prob')
 #' head(predprob)
+#' }
 #' @export
 #'
-predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) {
+predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class"), ...) {
   if (!inherits(object, "mbsnsing")) stop("Not a legitimate \"mbsnsing\" object")
   type <- match.arg(type)
   nclass <- object$nclass
@@ -2014,14 +2034,18 @@ predict.mbsnsing <- function(object, newdata = NULL, type = c("prob", "class")) 
 #' @param footnote a boolean value indicating whether to add annotation text to the PDF page. The default is False.
 #' @param landscape a boolean value indicating if the PDF page should be in landscape layout. The default is False.
 #' @param papersize a string specifying the PDF paper size. The default is 'a0paper'.
+#' @param verbose a logical value, default is FALSE.
+#' @param ... further parameters to the plot function.
 #' @return NA
 #' @examples
 #' # Suppose bs is a bsnsing object
+#' \dontrun{
 #' plot(bs)
 #' plot(bs, file = "/path/to/destination/filename.tex")
+#' }
 #' @export
 #'
-plot.bsnsing <- function(object, file = "", class_labels = c(),
+show.bsnsing <- function(object, file = "", class_labels = c(),
                          class_colors = c('red','green'),
                          rule_font = c("footnotesize","scriptsize","tiny","normalsize","small"),
                          rule_color = "blue", footnote = F,
@@ -2107,10 +2131,11 @@ plot.bsnsing <- function(object, file = "", class_labels = c(),
 #' Generate latex code for plotting the bsnsing tree
 #'
 #' @param object an object of class \code{\link{mbsnsing}}.
+#' @param ... further arguments to the plot function.
 #'
 #' @export
 #'
-plot.mbsnsing <- function(object){
+show.mbsnsing <- function(object, ...){
   if (!inherits(object, "mbsnsing")) stop("Not a legitimate \"mbsnsing\" object")
   cat("Input is a multi-class bsnsing object that contains multiple trees. Try plotting each tree separately. E.g., plot(bs[[1]]) to plot the first tree.")
 }
@@ -2128,6 +2153,7 @@ plot.mbsnsing <- function(object){
 #' @param lty line type used in the plot (1 solid, 2 dashed, etc.)
 #' @return the area under the curve (AUC) value
 #' @examples
+#' \dontrun{
 #' n <- nrow(BreastCancer)
 #' trainset <- sample(1:n, 0.7*n)  # randomly sample 70\% for training
 #' testset <- setdiff(1:n, trainset)  # the remaining is for testing
@@ -2140,9 +2166,10 @@ plot.mbsnsing <- function(object){
 #' # Plot the ROC curve and display the AUC
 #' ROC_func(data.frame(predict(bs, BreastCancer[testset,]),
 #'                     BreastCancer[testset,'Class']), 2, 1,
-#'          pos.label = 'malignant', plot.ROC=T)
+#'          pos.label = 'malignant', plot.ROC=TRUE)
 #' # Plot the tree to PDF and generate the .tex file
 #' plot(bs, file='../bsnsing_test/fig/BreastCancer.pdf')
+#' }
 #' @export
 ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC = F, add_on = F, color = "black", lty = 1){
   # Sort by score (high to low)
@@ -2172,16 +2199,20 @@ ROC_func <- function(df, label_colnum, score_colnum, pos.label = '1', plot.ROC =
   if(plot.ROC){
     # Plot the ROC curve
     if(add_on){
-      points(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', lty = lty, col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
+      graphics::points(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', lty = lty, col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
     } else{
-      plot(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', lty = lty, col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
+      graphics::plot(FPR, TPR, main=paste0("ROC curve"," (n = ", n, ")"), type = 'l', lty = lty, col=color, cex.lab = 1.2, cex.axis = 1.2, cex.main = 1.2)
     }
   }
   return(AUC)
 }
 
-#' Get OS type (windows, osx, linux)
-#' This function is not exposed to bsnsing users.
+#' Get the operating system type (windows, osx, linux).
+#' 
+#' This function is for internal use, to determine the file extension of the bslearn shared library. .dylib for oxs, .so for linux and .dll for windows.
+#' 
+#' @return a character string indicating the OS type
+#' 
 get_os <- function(){
   sysinf <- Sys.info()
   if (!is.null(sysinf)){
@@ -2205,7 +2236,7 @@ import_external_rules <- function(x, y, verbose){
   external_df <- cbind(y, x)
   colnames(external_df)[1] <- '._.external_y_._'  # reset the colname for y
   # Try party::ctree
-  if(is.element('party', installed.packages()[,1])){
+  if(is.element('party', utils::installed.packages()[,1])){
     ct <- tryCatch(
       error = function(cnd) NA,
       party::ctree(._.external_y_._ ~., data = external_df, controls = party::ctree_control(maxdepth=2))
@@ -2250,7 +2281,7 @@ import_external_rules <- function(x, y, verbose){
 
   }
   # Try C50::C5.0
-  if(is.element('C50', installed.packages()[,1])){
+  if(is.element('C50', utils::installed.packages()[,1])){
     external_df$._.external_y_._ <- as.factor(external_df$._.external_y_._)
     C50 <- tryCatch(
       error = function(cnd) NA,
@@ -2276,7 +2307,7 @@ import_external_rules <- function(x, y, verbose){
     }
   }
   # Try tree::tree
-  if(is.element('tree', installed.packages()[,1])){
+  if(is.element('tree', utils::installed.packages()[,1])){
     treetree <- tryCatch(
       error = function(cnd) NA,
       tree::tree(._.external_y_._ ~., data = external_df)
@@ -2299,15 +2330,15 @@ import_external_rules <- function(x, y, verbose){
     }
   }
   # Try rpart::rpart
-  if(is.element('rpart', installed.packages()[,1])){
+  if(is.element('rpart', utils::installed.packages()[,1])){
     rp <- tryCatch(
       error = function(cnd) NA,
-      rpart::rpart(._.external_y_._ ~., data = external_df, control = rpart.control(maxdepth=2))
+      rpart::rpart(._.external_y_._ ~., data = external_df, control = rpart::rpart.control(maxdepth=2))
     )
     if(class(rp) == "rpart"){
       rpsplits <- rp$splits
       if(!is.null(rpsplits)){
-        rpsplits <- rpsplits[which(rpsplits[,1]>0), ,drop = F]
+        rpsplits <- rpsplits[which(rpsplits[,1]>0), ,drop = FALSE]
         if(nrow(rpsplits) > 0){
           rp_rules <- paste(rownames(rpsplits), rep('<', nrow(rpsplits)), rpsplits[,4])
           # Add the reverse dirction rules

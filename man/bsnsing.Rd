@@ -18,6 +18,7 @@ an object of class \code{bsnsing} for a two-class problem or an object of class 
 Depending on the arguments provided, either \code{\link[bsnsing]{bsnsing.default}} or \code{\link[bsnsing]{bsnsing.formula}} will be called.
 }
 \examples{
+\dontrun{
 # Use the formula format
 bs <- bsnsing(Class~., data = BreastCancer)
 summary(bs)
@@ -31,9 +32,10 @@ predict(bs, type = 'class')  # the fitted class membership
 predict(bs, type = 'prob')  # the fitted probabilities
 
 # Use the (x, y) format, y must have two levels
-y <- ifelse(iris$Species == 'setosa', 1, 0)
+y <- ifelse(iris$Species == 'setosa', 1L, 0L)
 x <- iris[, c('Sepal.Length', 'Sepal.Width', 'Petal.Length', 'Petal.Width')]
-bs <- bsnsing(x, y, verbose = T)
+bs <- bsnsing(x, y, verbose = TRUE)
 summary(bs)
+}
 
 }

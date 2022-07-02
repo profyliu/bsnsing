@@ -27,18 +27,19 @@ a data frame containing binary variables, or a character string describing the r
 Create a set of variables (columns) with binary values for each column in the input data. For a variable with values of 0 and 1, the column is retained and no new column is created. For a numeric variable, the function \code{binarize.numeric} is called. For a factor column, the function \code{binarize.factor} is called.
 }
 \examples{
+\dontrun{
 # Load and prepare data
-data(Auto, package = 'ISLR')
-x <- Auto[, c('mpg', 'cylinders', 'displacement')]
+x <- auto[, c('mpg', 'cylinders', 'displacement')]
 x$cylinders <- as.factor(x$cylinders)
-y <- ifelse(Auto$origin == 1, 1, 0)
+y <- ifelse(auto$origin == 'USA', 1L, 0L)
 # binarize x by y = 1
 bx1 <- binarize(x, y, target = 1)
 head(bx1)
 # binarize x by y = 0
 bx0 <- binarize(x, y, target = 0)
 head(bx0)
-# when selecting only one column from a data frame, use drop = F to maintain
-binarize(Auto[,'mpg', drop = F], y, target = 1)
+# when selecting only one column from a data frame, use drop = FALSE to maintain
+binarize(auto[,'mpg', drop = FALSE], y, target = 1)
+}
 
 }

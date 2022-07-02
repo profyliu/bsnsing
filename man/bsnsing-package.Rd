@@ -3,18 +3,33 @@
 \docType{package}
 \name{bsnsing-package}
 \alias{bsnsing-package}
-\title{bsnsing: A package for decision tree learning with Boolean sensing}
+\title{bsnsing: A decision tree induction method based on recursive optimal boolean rule composition}
 \description{
-The bsnsing package provides functions for building a decision tree classifier and making predictions. It solves the two-class and multi-class classification problems under the supervised learning paradigm. While building a decision tree, \code{bsnsing} uses a Boolean rule involving multiple variables to split a node. Each split rule is identified by solving an optimization model that minimizes misclassification and complexity. Compared to other decision tree learners such as \code{\link[rpart]{rpart}} and \code{\link[party]{party}} that split a node based on a single variable, \code{\link{bsnsing}} can provide a shorter and more interpretable tree while scoring a high predictive accuracy.
+The bsnsing package provides functions for building a decision tree classifier and making predictions. It solves a mixed-integer programming (MIP) model to maximize the Gini reduction at each node split, and each node split rule can utilize multiple input variables. Benchmarking experiments on 75 open data sets suggest that bsnsing trees are the most capable of discriminating new cases compared to trees trained by other decision tree codes including the rpart, C50, party and tree packages in R. Compared to other optimal decision tree packages, including DL8.5, OSDT, GOSDT and indirectly more, bsnsing stands out in its training speed, ease of use and broader applicability without losing in prediction accuracy. For more information, please check out the paper \url{https://arxiv.org/abs/2205.15263}, to be published in INFORMS Journal on Computing.
 }
+\section{The ENUM algorithm}{
+
+The default method for solving the MIP model is the implicit enumeration (ENUM) algorithm, while other solvers including GUROBI, CPLEX and lpSolve can be used (via specifying the opt.solver option in the \code{\link{bsnsing}} function). However, the users are strongly suggested to compile the bslearn.c file, make it into a shared library (e.g., .dylib, .so or .dll binary file) and paste the binary file in the work directory. In this way, the bsnsing will leverage the compiled code (instead of the R code) for the ENUM algorithm, which runs much (~40x) faster. All benchmarking experiments were run using the compiled ENUM algorithm. The C source file and the MAKE file can be found at \url{https://github.com/profyliu/bsnsing}. Pre-compiled binary files for different target platforms are also provided there for the convenience of the users (just download the .dylib, .so or the .dll file, depending on the operating system, and put it in the work directory). Future updates of this package will internalize the compilation step, but for now only the R implementation of the ENUM algorithm is included in the package source, so serious users please take the extra step outlined above.
+}
+
+\section{More data sets}{
+
+Several data frames (i.e., \code{\link{auto}}, \code{\link{iris}}, \code{\link{GlaucomaMVF}} and \code{\link{BreastCancer}}) used in the example code are included in this package. More two-class and multi-class classification data sets can be found at \url{https://github.com/profyliu/bsnsing}.
+}
+
 \section{Learn functions}{
 
-The learn functions include \code{\link{bsnsing}}, \code{\link{bsnsing.formula}} and \code{\link{bsnsing.default}}.
+The learn (train) functions include \code{\link{bsnsing}}, \code{\link{bsnsing.formula}} and \code{\link{bsnsing.default}}.
 }
 
 \section{Predict functions}{
 
 The predict functions include: \code{\link{predict.bsnsing}} and \code{\link{predict.mbsnsing}}.
+}
+
+\section{Plot functions}{
+
+A \code{\link{bsnsing}} object (tree) can be plotted into a PDF file, or in the form of latex code, by the function \code{\link{show.bsnsing}}. The ROC curve can be plotted using the function \code{\link{ROC_func}}.
 }
 
 \section{Auxilliary functions}{
@@ -28,15 +43,6 @@ Here is a list of internal functions of the package that are open for end users.
 \code{\link{binarize.y}},
 \code{\link{bslearn}},
 \code{\link{bscontrol}}
-\code{\link{plot.bsnsing}}
-\code{\link{ROC_func}}
-}
-
-\section{Future work}{
-
-Default parameter tuning for out-of-the-box performance. The default parameters in \code{\link{bscontrol}} are currently set quite arbitrarily. Experiments will be performed on a large collection of data sets in order to pinpoint the parameter combination that work well (in terms of training speed, predictive accuracy and interpretability, etc.) under most use cases.
-
-Weighting positive and negative cases in imbalanced training sets. If false positive and false negative are given the same weight in a highly imbalanced data set, a null split might be produced in as early as the root node, resulting in a trivial classification, i.e., claiming all cases to fall in the majority class. A weighting scheme should be implemented to ameliorate this situation.
 }
 
 \author{

@@ -4,14 +4,16 @@
 \alias{predict.mbsnsing}
 \title{Make Predictions with a \code{\link{bsnsing}} Model}
 \usage{
-\method{predict}{mbsnsing}(object, newdata = NULL, type = c("prob", "class"))
+\method{predict}{mbsnsing}(object, newdata = NULL, type = c("prob", "class"), ...)
 }
 \arguments{
 \item{object}{an object of class \code{\link{mbsnsing}}.}
 
+\item{newdata}{an optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.}
+
 \item{type}{a character string indicating the type of prediction. \emph{'prob'} predicts the probability of being in each class, and \emph{'class'} predicts the class membership.}
 
-\item{an}{optional data frame in which to look for variables for prediction. If omitted, the fitted class or probability will be returned.}
+\item{...}{further arguments to predict.mbsnsing.}
 }
 \value{
 a data frame containing the predicted values.
@@ -20,6 +22,7 @@ a data frame containing the predicted values.
 Make Predictions with a \code{\link{bsnsing}} Model
 }
 \examples{
+\dontrun{
 n <- nrow(iris)
 train_index <- sample(1:n, round(0.5*n))
 test_index <- setdiff(1:n, train_index)
@@ -32,4 +35,5 @@ table(pred, actual = iris[test_index, 'Species'])
 # Predict the probabilities
 predprob <- predict(bs, iris[test_index, ], type = 'prob')
 head(predprob)
+}
 }

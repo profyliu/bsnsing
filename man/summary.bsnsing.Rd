@@ -8,6 +8,8 @@
 }
 \arguments{
 \item{object}{an object of class \code{\link{bsnsing}}.}
+
+\item{...}{further arguments.}
 }
 \value{
 a list of detailed information in the given \code{object}.

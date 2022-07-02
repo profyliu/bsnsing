@@ -50,6 +50,8 @@ If the file argument is supplied, this function will invoke the external program
 }
 \examples{
 # Suppose bs is a bsnsing object
+\dontrun{
 plot(bs)
 plot(bs, file = "/path/to/destination/filename.tex")
+}
 }

@@ -39,6 +39,7 @@ the area under the curve (AUC) value
 This is a general utility function, not part of the bsnsing functionality.
 }
 \examples{
+\dontrun{
 n <- nrow(BreastCancer)
 trainset <- sample(1:n, 0.7*n)  # randomly sample 70\\% for training
 testset <- setdiff(1:n, trainset)  # the remaining is for testing
@@ -51,7 +52,8 @@ table(pred, actual)  # display the confusion matrix
 # Plot the ROC curve and display the AUC
 ROC_func(data.frame(predict(bs, BreastCancer[testset,]),
                     BreastCancer[testset,'Class']), 2, 1,
-         pos.label = 'malignant', plot.ROC=T)
+         pos.label = 'malignant', plot.ROC=TRUE)
 # Plot the tree to PDF and generate the .tex file
 plot(bs, file='../bsnsing_test/fig/BreastCancer.pdf')
+}
 }
